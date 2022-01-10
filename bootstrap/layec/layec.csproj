@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+	<LangVersion>10</LangVersion>
+	<Nullable>enable</Nullable>
+	<ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\laye-compiler-data\laye-compiler-data.csproj" />
+    <ProjectReference Include="..\laye-compiler\laye-compiler.csproj" />
+    <ProjectReference Include="..\laye-data\laye-data.csproj" />
+  </ItemGroup>
+
+</Project>
