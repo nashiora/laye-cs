@@ -2,37 +2,37 @@
 
 namespace laye;
 
-public abstract record class Token(SourceSpan SourceSpan) : IHasSourceSpan
+public abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
 {
-    public sealed record class Integer(SourceSpan SourceSpan, ulong LiteralValue) : Token(SourceSpan);
-    public sealed record class Float(SourceSpan SourceSpan, double LiteralValue) : Token(SourceSpan);
-    public sealed record class String(SourceSpan SourceSpan, string LiteralValue) : Token(SourceSpan);
-    public sealed record class Delimiter(SourceSpan SourceSpan, laye.Delimiter Kind) : Token(SourceSpan);
+    public sealed record class Integer(SourceSpan SourceSpan, ulong LiteralValue) : LayeToken(SourceSpan);
+    public sealed record class Float(SourceSpan SourceSpan, double LiteralValue) : LayeToken(SourceSpan);
+    public sealed record class String(SourceSpan SourceSpan, string LiteralValue) : LayeToken(SourceSpan);
+    public sealed record class Delimiter(SourceSpan SourceSpan, laye.Delimiter Kind) : LayeToken(SourceSpan);
 
-    public sealed record class Identifier(SourceSpan SourceSpan, string Image) : Token(SourceSpan);
-    public sealed record class Operator(SourceSpan SourceSpan, string Image) : Token(SourceSpan);
-    public sealed record class Keyword(SourceSpan SourceSpan, laye.Keyword Kind) : Token(SourceSpan);
+    public sealed record class Identifier(SourceSpan SourceSpan, string Image) : LayeToken(SourceSpan);
+    public sealed record class Operator(SourceSpan SourceSpan, string Image) : LayeToken(SourceSpan);
+    public sealed record class Keyword(SourceSpan SourceSpan, laye.Keyword Kind, uint SizeData = 0) : LayeToken(SourceSpan);
 }
 
-internal static class TokenKeywordExt
+public static class TokenKeywordExt
 {
-    public static bool IsModifier(this Token.Keyword kw)
+    public static bool IsModifier(this LayeToken.Keyword kw)
         => kw.Kind > Keyword._Modifier_Start_ && kw.Kind < Keyword._Modifier_End_;
 
-    public static AstNode.Modifier ToModifierNode(this Token.Keyword kw)
+    public static LayeAst.Modifier ToModifierNode(this LayeToken.Keyword kw)
     {
 #if DEBUG
         Debug.Assert(kw.IsModifier(), "token is not a modifier token");
 #endif
 
         if (kw.Kind > Keyword._Visibility_Modifier_Start_ && kw.Kind < Keyword._Visibility_Modifier_End_)
-            return new AstNode.Visibility(kw);
+            return new LayeAst.Visibility(kw);
         else if (kw.Kind > Keyword._CallingConvention_Modifier_Start_ && kw.Kind < Keyword._CallingConvention_Modifier_End_)
-            return new AstNode.CallingConvention(kw);
+            return new LayeAst.CallingConvention(kw);
         else if (kw.Kind > Keyword._FunctionHint_Modifier_Start_ && kw.Kind < Keyword._FunctionHint_Modifier_End_)
-            return new AstNode.FunctionHint(kw);
+            return new LayeAst.FunctionHint(kw);
         else if (kw.Kind > Keyword._Accessibility_Modifier_Start_ && kw.Kind < Keyword._Accessibility_Modifier_End_)
-            return new AstNode.Accessibility(kw);
+            return new LayeAst.Accessibility(kw);
 
         throw new InvalidOperationException($"keyword with kind {kw.Kind} is not a valid modifier");
     }
@@ -69,39 +69,13 @@ public enum Keyword
 
     #region Type Names
 
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
     Int,
-
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
     UInt,
+    SizedInt,
+    SizedUInt,
 
-    CChar,
-    CShort,
-    CInt,
-    CLong,
-    CLongLong,
-
-    CUChar,
-    CUShort,
-    CUInt,
-    CULong,
-    CULongLong,
-
-    F16,
-    F32,
-    F64,
+    SizedFloat,
     Float,
-
-    CFloat,
-    CDouble,
 
     Void,
     Bool,

@@ -1,26 +1,34 @@
-﻿namespace laye.Compiler;
+namespace laye.Compiler;
 
-internal sealed class LayeParser
+public sealed class LayeParser
 {
+    public static LayeAst[] ParseSyntaxFromFile(string sourceFilePath, List<Diagnostic> diagnostics)
+    {
+        var parser = new LayeParser(sourceFilePath, diagnostics, LayeLexer.ReadTokensFromFile(sourceFilePath, diagnostics));
+        return parser.GetSyntaxTree();
+    }
+
+    private readonly string m_fileName;
     private readonly List<Diagnostic> m_diagnostics;
-    private readonly Token[] m_tokens;
+    private readonly LayeToken[] m_tokens;
 
     private int m_tokenIndex = 0;
 
     private bool IsEoF => m_tokenIndex >= m_tokens.Length;
 
-    private Token CurrentToken => Peek(0);
-    private Token NextToken => Peek(1);
+    private LayeToken CurrentToken => Peek(0);
+    private LayeToken NextToken => Peek(1);
 
-    public LayeParser(List<Diagnostic> diagnostics, Token[] tokens)
+    private LayeParser(string fileName, List<Diagnostic> diagnostics, LayeToken[] tokens)
     {
+        m_fileName = fileName;
         m_diagnostics = diagnostics;
         m_tokens = tokens;
     }
 
-    public AstNode[] GetSyntaxTree()
+    private LayeAst[] GetSyntaxTree()
     {
-        var topLevelNodes = new List<AstNode>();
+        var topLevelNodes = new List<LayeAst>();
 
         return topLevelNodes.ToArray();
     }
@@ -28,7 +36,7 @@ internal sealed class LayeParser
     #region Token Traversal
 
     private void Advance() => m_tokenIndex++;
-    private Token Peek(int peekOffset = 1)
+    private LayeToken Peek(int peekOffset = 1)
     {
         if (IsEoF)
             throw new InvalidOperationException("Cannot peek token: end of file reached");
@@ -41,9 +49,9 @@ internal sealed class LayeParser
     }
 
     private bool Check<TToken>()
-        where TToken : Token => CurrentToken is TToken;
+        where TToken : LayeToken => CurrentToken is TToken;
     private bool Check<TToken>(out TToken token)
-        where TToken : Token
+        where TToken : LayeToken
     {
         if (CurrentToken is TToken current)
         {
@@ -55,39 +63,75 @@ internal sealed class LayeParser
         return false;
     }
 
-    private bool CheckIdentifier(out Token.Identifier identifier) => Check(out identifier);
-    private bool CheckDelimiter(Delimiter kind, out Token.Delimiter delimiter) => Check(out delimiter) && delimiter.Kind == kind;
+    private bool CheckIdentifier(out LayeToken.Identifier identifier) => Check(out identifier);
+    private bool CheckDelimiter(Delimiter kind, out LayeToken.Delimiter delimiter) => Check(out delimiter) && delimiter.Kind == kind;
+    private bool CheckKeyword(Keyword kind, out LayeToken.Keyword keyword) => Check(out keyword) && keyword.Kind == kind;
 
     #endregion
 
     #region Modifiers
 
-    private bool TryGetModifierList(ModifierContext context, out AstNode.Modifier[] modifiers)
+    private LayeAst.Modifier[] GetModifierList()
     {
-        int startIndex = 0;
-
-        while (!IsEoF && Check<Token.Keyword>(out var keyword))
+        var result = new List<LayeAst.Modifier>();
+        while (!IsEoF && Check<LayeToken.Keyword>(out var keyword) && keyword.IsModifier())
         {
+            result.Add(keyword.ToModifierNode());
+            Advance(); // modifier keyword
         }
 
-        modifiers = Array.Empty<AstNode.Modifier>();
-        return true;
+        return result.ToArray();
     }
 
     #endregion
 
     #region Types
 
-    private AstNode.Type? TryGetTypeNode()
+    private LayeAst.Type? TryGetTypeNode(bool isRequired = true)
     {
-        return null;
-    }
+        int tokenIndex = m_tokenIndex;
 
-    private AstNode.Type? TryGetTypeNode_Impl()
-    {
+        var typeModifiers = GetModifierList();
 
+        LayeAst.Type? type = null;
 
-        return null;
+        if (CheckKeyword(Keyword.SizedInt, out var sizedIntKw))
+        {
+            type = new LayeAst.BuiltInType(sizedIntKw);
+            Advance();
+        }
+        else if (CheckKeyword(Keyword.SizedUInt, out var sizedUIntKw))
+        {
+            type = new LayeAst.BuiltInType(sizedUIntKw);
+            Advance();
+        }
+        else if (CheckKeyword(Keyword.SizedFloat, out var sizedFloatKw))
+        {
+            type = new LayeAst.BuiltInType(sizedFloatKw);
+            Advance();
+        }
+        else if (CheckKeyword(Keyword.Int, out var intKw))
+        {
+            type = new LayeAst.BuiltInType(intKw);
+            Advance();
+        }
+        else if (CheckKeyword(Keyword.UInt, out var uintKw))
+        {
+            type = new LayeAst.BuiltInType(uintKw);
+            Advance();
+        }
+        else if (CheckKeyword(Keyword.Float, out var floatKw))
+        {
+            type = new LayeAst.BuiltInType(floatKw);
+            Advance();
+        }
+        else if (CheckKeyword(Keyword.Void, out var voidKw))
+        {
+            type = new LayeAst.BuiltInType(voidKw);
+            Advance();
+        }
+
+        return type;
     }
 
     #endregion
