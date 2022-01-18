@@ -7,6 +7,7 @@ public abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Integer(SourceSpan SourceSpan, ulong LiteralValue) : LayeToken(SourceSpan);
     public sealed record class Float(SourceSpan SourceSpan, double LiteralValue) : LayeToken(SourceSpan);
     public sealed record class String(SourceSpan SourceSpan, string LiteralValue) : LayeToken(SourceSpan);
+    public sealed record class Character(SourceSpan SourceSpan, char LiteralValue) : LayeToken(SourceSpan);
     public sealed record class Delimiter(SourceSpan SourceSpan, laye.Delimiter Kind) : LayeToken(SourceSpan);
 
     public sealed record class Identifier(SourceSpan SourceSpan, string Image) : LayeToken(SourceSpan);
@@ -68,22 +69,21 @@ public enum Operator
 {
     Invalid = 0,
 
+    Assign,
+
     Add,
     Subtract,
     Multiply,
     Divide,
     Modulo,
 
-    LeftShift,
-    RightShift,
-
     BitAnd,
     BitOr,
     BitXor,
     BitNot,
-    BitComplement,
 
-    Assign,
+    LeftShift,
+    RightShift,
 
     CompareEqual,
     CompareNotEqual,
@@ -109,6 +109,9 @@ public enum Keyword
 
     Void,
     Bool,
+
+    Rune,
+
     RawPtr,
     
     NoReturn,
@@ -184,7 +187,6 @@ public enum Keyword
     Xor,
     Not,
 
-    New,
     Cast,
 
     #endregion

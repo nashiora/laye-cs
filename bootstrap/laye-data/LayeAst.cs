@@ -193,7 +193,7 @@ public abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ExpressionFunctionBody(LayeToken.Delimiter Arrow, Expr BodyExpression, LayeToken.Delimiter SemiColon)
         : FunctionBody(new SourceSpan(Arrow.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
 
-    public sealed record class FunctionDeclaration(Modifier[] Modifiers, Type ReturnType, LayeToken.Delimiter OpenParams, ParamData[] Parameters, LayeToken.Delimiter[] ParameterSeparators, LayeToken.Delimiter CloseParams, FunctionBody Body)
+    public sealed record class FunctionDeclaration(Modifier[] Modifiers, Type ReturnType, LayeToken.Identifier Name, LayeToken.Delimiter OpenParams, ParamData[] Parameters, LayeToken.Delimiter[] ParameterSeparators, LayeToken.Delimiter CloseParams, FunctionBody Body)
         : Stmt(new SourceSpan((Modifiers.Length == 0 ? (IHasSourceSpan)ReturnType : Modifiers[0]).SourceSpan.StartLocation, Body.SourceSpan.EndLocation));
 
     public sealed record class Return(LayeToken.Keyword ReturnKeyword, Expr? ReturnValue, LayeToken.Delimiter SemiColon)

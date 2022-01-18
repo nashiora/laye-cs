@@ -1,5 +1,7 @@
 #define ALLOW_NAMESPACING
 
+using System.Diagnostics;
+
 namespace laye.Compiler;
 
 public sealed class LayeParser
@@ -38,7 +40,22 @@ public sealed class LayeParser
     {
         var topLevelNodes = new List<LayeAst>();
 
+        while (!IsEoF)
+        {
+            var topLevelNode = ReadTopLevel();
+            if (topLevelNode is null)
+            {
+                AssertHasError("failing to get top level node in main parse loop");
+                return Array.Empty<LayeAst>();
+            }
+        }
+
         return topLevelNodes.ToArray();
+    }
+
+    private void AssertHasError(string context)
+    {
+        Debug.Assert(m_diagnostics.Any(d => d is Diagnostic.Error), $"No diagnostics generated when {context}");
     }
 
     #region Token Traversal
@@ -108,7 +125,7 @@ public sealed class LayeParser
 
     #region Modifiers
 
-    private LayeAst.Modifier[] GetModifierList()
+    private LayeAst.Modifier[] ReadModifierList()
     {
         var result = new List<LayeAst.Modifier>();
         while (!IsEoF && Check<LayeToken.Keyword>(out var keyword) && keyword.IsModifier())
@@ -124,7 +141,7 @@ public sealed class LayeParser
 
     #region Types
 
-    private LayeAst.Type? TryGetTypeNode(bool isRequired = true)
+    private LayeAst.Type? TryReadTypeNode(bool isRequired = true)
     {
         int tokenIndex = m_tokenIndex;
 
@@ -220,11 +237,36 @@ public sealed class LayeParser
 
         while (!IsEoF)
         {
-            var containerModifiers = GetModifierList();
+            var containerModifiers = ReadModifierList();
             if (CheckOperator(Operator.Multiply, out var starOp))
             {
+                Advance(); // `*`
                 type = new LayeAst.PointerType(type, containerModifiers, starOp);
-                Advance();
+            }
+            else if (CheckDelimiter(Delimiter.OpenBracket, out var openBracketDelim))
+            {
+                Advance(); // `[`
+
+                if (!ExpectDelimiter(Delimiter.CloseBracket, out var closeBracketDelim))
+                {
+                    Advance(); // `]`
+                    type = new LayeAst.SliceType(type, containerModifiers, openBracketDelim, closeBracketDelim);
+                }
+                else if (CheckOperator(Operator.Multiply, out var starOp2))
+                {
+                    Advance(); // `*`
+
+                    if (!ExpectDelimiter(Delimiter.CloseBracket, out var closeBracketDelim2))
+                    {
+                        if (isRequired)
+                            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `]` to close buffer type"));
+
+                        m_tokenIndex = tokenIndex;
+                        return null;
+                    }
+
+                    type = new LayeAst.BufferType(type, containerModifiers, openBracketDelim, starOp2, closeBracketDelim2);
+                }
             }
         }
 
@@ -232,4 +274,78 @@ public sealed class LayeParser
     }
 
     #endregion
+
+    private LayeAst? ReadTopLevel()
+    {
+        m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token at top level"));
+        return null;
+    }
+    
+    private LayeAst? ReadFunctionDeclaration()
+    {
+        var returnType = TryReadTypeNode();
+        if (returnType is null)
+        {
+            AssertHasError("failing to read a function return type");
+            return null;
+        }
+
+        return ReadFunctionDeclaration(Array.Empty<LayeAst.Modifier>(), returnType);
+    }
+
+    private LayeAst? ReadFunctionDeclaration(LayeAst.Modifier[] modifiers, LayeAst.Type returnType)
+    {
+        if (!ExpectIdentifier(out var functionName))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as function name"));
+            return null;
+        }
+
+        if (!ExpectDelimiter(Delimiter.OpenParen, out var openParams))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` as start of function parameter list"));
+            return null;
+        }
+
+        var paramData = Array.Empty<LayeAst.ParamData>();
+        var paramDelims = Array.Empty<LayeToken.Delimiter>();
+
+        if (!ExpectDelimiter(Delimiter.CloseParen, out var closeParams))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` as end of function parameter list"));
+            return null;
+        }
+
+        LayeAst.FunctionBody body;
+        
+        // TODO(local): other function body kinds
+
+        var bodyBlock = ReadBlock();
+        if (bodyBlock is null)
+        {
+            AssertHasError("failing to read function block body");
+            return null;
+        }
+
+        body = new LayeAst.BlockFunctionBody(bodyBlock);
+
+        return new LayeAst.FunctionDeclaration(modifiers, returnType, functionName, openParams, paramData, paramDelims, closeParams, body);
+    }
+
+    private LayeAst.Block? ReadBlock()
+    {
+        if (!ExpectDelimiter(Delimiter.OpenBrace, out var openBlock))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `{` as start of block"));
+            return null;
+        }
+
+        if (!ExpectDelimiter(Delimiter.CloseBrace, out var closeBlock))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `}` as end of block"));
+            return null;
+        }
+
+        return new LayeAst.Block(openBlock, closeBlock, Array.Empty<LayeAst.Stmt>());
+    }
 }
