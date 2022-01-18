@@ -268,6 +268,7 @@ public sealed class LayeParser
                     type = new LayeAst.BufferType(type, containerModifiers, openBracketDelim, starOp2, closeBracketDelim2);
                 }
             }
+            else break;
         }
 
         return type;
@@ -277,6 +278,8 @@ public sealed class LayeParser
 
     private LayeAst? ReadTopLevel()
     {
+        return ReadFunctionDeclaration();
+
         m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token at top level"));
         return null;
     }

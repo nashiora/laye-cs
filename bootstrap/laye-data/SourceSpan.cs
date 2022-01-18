@@ -30,6 +30,7 @@ public readonly struct SourceSpan : IEquatable<SourceSpan>, IComparable<SourceSp
         EndLocation = endLocation;
     }
 
+    public override string ToString() => $"{SourceName}:{StartLocation.Line}:{StartLocation.Column}";
     public string ToString(string sourceText) => sourceText[(int)StartLocation.SourceIndex..(int)EndLocation.SourceIndex];
 
     public bool Equals(SourceSpan other) => other.StartLocation == StartLocation && other.EndLocation == EndLocation;

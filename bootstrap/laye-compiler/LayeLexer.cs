@@ -24,7 +24,7 @@ internal sealed class LayeLexer
     private char NextChar => HasNext ? m_sourceText[(int)m_position + 1] : '\0';
 
     private bool IsEoF => m_position >= m_sourceText.Length;
-    private bool HasNext => m_position + 1 >= m_sourceText.Length;
+    private bool HasNext => m_position + 1 < m_sourceText.Length;
 
     public LayeLexer(string fileName, List<Diagnostic> diagnostics, string sourceText)
     {
@@ -52,7 +52,15 @@ internal sealed class LayeLexer
 
     private void Advance()
     {
+        char c = CurrentChar;
         m_position++;
+
+        if (c == '\n')
+        {
+            m_line++;
+            m_column = 1;
+        }
+        else m_column++;
     }
 
     private void ConsumeTrivia()
@@ -79,22 +87,20 @@ internal sealed class LayeLexer
                 if (c == '\n')
                     break;
             }
-            else if (c == '/')
+            else if (c == '/' && HasNext && NextChar == '/')
             {
-                if (HasNext && NextChar == '/')
+                Advance();
+                Advance();
+
+                while (!IsEoF)
                 {
+                    c = CurrentChar;
                     Advance();
-                    Advance();
-
-                    while (!IsEoF)
-                    {
-                        Advance();
-                        if (c == '\n')
-                            break;
-                    }
-
-                    break;
+                    if (c == '\n')
+                        break;
                 }
+
+                break;
             }
             else break;
         }
@@ -120,6 +126,8 @@ internal sealed class LayeLexer
     private LayeToken? ReadToken()
     {
         ConsumeTrivia();
+        if (IsEoF)
+            return null;
 
         var startLocation = CurrentLocation;
 

@@ -43,7 +43,25 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         sourceSyntaxes[sourceFile] = sourceSyntax;
     }
 
+    if (diagnostics.Any(d => d is Diagnostic.Error))
+    {
+        PrintDiagnostics(diagnostics);
+        return 1;
+    }
+
+    PrintDiagnostics(diagnostics);
     return 0;
+}
+
+static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics)
+{
+    foreach (Diagnostic diagnostic in diagnostics)
+    {
+        Console.Write($"{diagnostic.SourceSpan}: ");
+        if (diagnostic is Diagnostic.Error)
+            Console.Write("error: ");
+        Console.WriteLine(diagnostic.Message);
+    }
 }
 
 static int ParseError(CommandLine.ParserResult<ProgramArgs> result, IEnumerable<CommandLine.Error> errors)

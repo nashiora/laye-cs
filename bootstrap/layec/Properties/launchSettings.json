@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "layec": {
+      "commandName": "Project",
+      "commandLineArgs": ".",
+      "workingDirectory": "$(SolutionDir)\\..\\layec\\src"
+    }
+  }
+}
