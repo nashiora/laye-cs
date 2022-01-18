@@ -382,7 +382,7 @@ public sealed class LayeParser
             return null;
         }
 
-        return new LayeAst.ExpressionStatement(expression);
+        return new LayeAst.ExpressionStatement(expression, semi);
     }
 
     private LayeAst.Expr? ReadExpression()
@@ -398,6 +398,11 @@ public sealed class LayeParser
         {
             Advance();
             result = new LayeAst.NameLookup(ident);
+        }
+        else if (Check<LayeToken.Integer>(out var integerLit))
+        {
+            Advance();
+            result = new LayeAst.Integer(integerLit);
         }
         else if (Check<LayeToken.String>(out var stringLit))
         {

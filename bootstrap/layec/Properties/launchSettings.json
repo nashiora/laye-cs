@@ -2,7 +2,7 @@
   "profiles": {
     "layec": {
       "commandName": "Project",
-      "commandLineArgs": ".",
+      "commandLineArgs": ". --print-syntax",
       "workingDirectory": "$(SolutionDir)\\..\\layec\\src"
     }
   }

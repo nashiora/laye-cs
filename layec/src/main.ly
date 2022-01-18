@@ -6,5 +6,5 @@
 
 void main()
 {
-    printf("Hello, hunter!\n");
+    printf("Hello, hunter!%c", 10);
 }

@@ -41,6 +41,12 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
     {
         var sourceSyntax = LayeParser.ParseSyntaxFromFile(sourceFile, diagnostics);
         sourceSyntaxes[sourceFile] = sourceSyntax;
+
+        if (args.PrintSyntaxTrees)
+        {
+            var prettyPrinter = new DebugPrettyPrinter(File.ReadAllText(sourceFile));
+            prettyPrinter.PrettyPrint(sourceSyntax);
+        }
     }
 
     if (diagnostics.Any(d => d is Diagnostic.Error))
@@ -109,4 +115,8 @@ sealed class ProgramArgs
 
     [CommandLine.Option("help", Default = false, HelpText = "Display this help documentation.")]
     public bool ShowHelp { get; set; } = false;
+
+
+    [CommandLine.Option("print-syntax", Default = false, HelpText = "Pretty-print syntax trees as they are parsed.")]
+    public bool PrintSyntaxTrees { get; set; } = false;
 }

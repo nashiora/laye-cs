@@ -183,7 +183,7 @@ public abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Stmt(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
-    public sealed record class ExpressionStatement(Expr Expression) : Stmt(Expression.SourceSpan);
+    public sealed record class ExpressionStatement(Expr Expression, LayeToken.Delimiter Terminator) : Stmt(Expression.SourceSpan);
 
     public sealed record class FileNamespaceDeclaration(LayeToken.Keyword NamespaceKeyword, NamePathPart[] NameParts, LayeToken.Delimiter NameDelimiters, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(NamespaceKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
