@@ -1,4 +1,4 @@
-﻿//#define NO_DEFAULT_SOURCE_DIRECTORY // if we allow `./` as the default target, we shouldn't print help text on no arguments given. This flag controls wether or not `layec` prints help text when no arguments are passed
+﻿#define NO_DEFAULT_SOURCE_DIRECTORY // if we allow `./` as the default target, we shouldn't print help text on no arguments given. This flag controls wether or not `layec` prints help text when no arguments are passed
 
 using laye;
 using laye.Compiler;
@@ -54,10 +54,10 @@ static int ParseError(CommandLine.ParserResult<ProgramArgs> result, IEnumerable<
 
 static string GetHelpText(CommandLine.ParserResult<ProgramArgs> result)
 {
-    const string Heading = "Laye Stand Alone Compiler"; // Version + Architecture
-    const string Copyright = "Copyright (C) Local Atticus";
+    const string Heading = "Laye Stand-alone compiler"; // Version + Architecture
+    const string Version = "Version 0.1.0";
 
-    return new CommandLine.Text.HelpText(Heading, Copyright)
+    return new CommandLine.Text.HelpText(Heading, Version)
     {
         AutoHelp = false,
         AutoVersion = false,

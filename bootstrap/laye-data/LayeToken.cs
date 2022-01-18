@@ -10,7 +10,8 @@ public abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Delimiter(SourceSpan SourceSpan, laye.Delimiter Kind) : LayeToken(SourceSpan);
 
     public sealed record class Identifier(SourceSpan SourceSpan, string Image) : LayeToken(SourceSpan);
-    public sealed record class Operator(SourceSpan SourceSpan, string Image) : LayeToken(SourceSpan);
+
+    public sealed record class Operator(SourceSpan SourceSpan, laye.Operator Kind) : LayeToken(SourceSpan);
     public sealed record class Keyword(SourceSpan SourceSpan, laye.Keyword Kind, uint SizeData = 0) : LayeToken(SourceSpan);
 }
 
@@ -61,6 +62,35 @@ public enum Delimiter
     PathSeparator = 256,
     FatArrow,
     QuestionDot,
+}
+
+public enum Operator
+{
+    Invalid = 0,
+
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+
+    LeftShift,
+    RightShift,
+
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitNot,
+    BitComplement,
+
+    Assign,
+
+    CompareEqual,
+    CompareNotEqual,
+    CompareGreaterThan,
+    CompareGreaterThanOrEqual,
+    CompareLessThan,
+    CompareLessThanOrEqual,
 }
 
 public enum Keyword
