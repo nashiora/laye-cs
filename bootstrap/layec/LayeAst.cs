@@ -169,6 +169,9 @@ public abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Block(LayeToken.Delimiter Start, LayeToken.Delimiter End, Stmt[] Body)
         : Expr(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));
 
+    public sealed record class Invoke(Expr TargetExpression, LayeToken.Delimiter OpenArgs, Expr[] Arguments, LayeToken.Delimiter[] ArgumentDelimiters, LayeToken.Delimiter CloseArgs)
+        : Expr(new SourceSpan(TargetExpression.SourceSpan.StartLocation, CloseArgs.SourceSpan.EndLocation));
+
     public sealed record class If(LayeToken.Keyword IfKeyword, LayeToken.Delimiter ConditionStart, LayeToken.Delimiter ConditionEnd, Expr Condition, Expr IfBody, LayeToken.Keyword? ElseKeyword, Expr? ElseBody)
         : Expr(new SourceSpan(IfKeyword.SourceSpan.StartLocation, (ElseBody ?? IfBody).SourceSpan.EndLocation));
     public sealed record class While(LayeToken.Keyword WhileKeyword, LayeToken.Delimiter ConditionStart, LayeToken.Delimiter ConditionEnd, Expr Condition, Expr WhileBody, LayeToken.Keyword? ElseKeyword, Expr? ElseBody)

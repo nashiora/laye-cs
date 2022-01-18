@@ -48,6 +48,8 @@ public sealed class LayeParser
                 AssertHasError("failing to get top level node in main parse loop");
                 return Array.Empty<LayeAst>();
             }
+
+            topLevelNodes.Add(topLevelNode);
         }
 
         return topLevelNodes.ToArray();
@@ -343,12 +345,116 @@ public sealed class LayeParser
             return null;
         }
 
+        var bodyStatements = new List<LayeAst.Stmt>();
+        while (!CheckDelimiter(Delimiter.CloseBrace, out var _))
+        {
+            var statement = ReadStatement();
+            if (statement is null)
+            {
+                AssertHasError("failing to read statement in block");
+                return null;
+            }
+
+            bodyStatements.Add(statement);
+        }
+
         if (!ExpectDelimiter(Delimiter.CloseBrace, out var closeBlock))
         {
             m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `}` as end of block"));
             return null;
         }
 
-        return new LayeAst.Block(openBlock, closeBlock, Array.Empty<LayeAst.Stmt>());
+        return new LayeAst.Block(openBlock, closeBlock, bodyStatements.ToArray());
+    }
+
+    private LayeAst.Stmt? ReadStatement()
+    {
+        var expression = ReadExpression();
+        if (expression is null)
+        {
+            AssertHasError("failing to read expression as statement");
+            return null;
+        }
+
+        if (!ExpectDelimiter(Delimiter.SemiColon, out var semi))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate expression statement"));
+            return null;
+        }
+
+        return new LayeAst.ExpressionStatement(expression);
+    }
+
+    private LayeAst.Expr? ReadExpression()
+    {
+        return ReadPrimaryExpression();
+    }
+
+    private LayeAst.Expr? ReadPrimaryExpression()
+    {
+        LayeAst.Expr? result = null;
+
+        if (CheckIdentifier(out var ident))
+        {
+            Advance();
+            result = new LayeAst.NameLookup(ident);
+        }
+        else if (Check<LayeToken.String>(out var stringLit))
+        {
+            Advance();
+            result = new LayeAst.String(stringLit);
+        }
+        else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));
+
+        if (result is null)
+        {
+            AssertHasError("failing to create primary expression node");
+            return null;
+        }
+
+        return ReadPrimaryExpressionSuffix(result);
+    }
+
+    private LayeAst.Expr? ReadPrimaryExpressionSuffix(LayeAst.Expr primary)
+    {
+        if (CheckDelimiter(Delimiter.OpenParen, out var openInvoke))
+        {
+            Advance(); // `(`
+
+            var args = new List<LayeAst.Expr>();
+            var argsDelims = new List<LayeToken.Delimiter>();
+            
+            while (!CheckDelimiter(Delimiter.CloseParen, out var _))
+            {
+                var argument = ReadExpression();
+                if (argument is null)
+                {
+                    AssertHasError("failing to parse argument expression");
+                    return null;
+                }
+
+                args.Add(argument);
+
+                if (CheckDelimiter(Delimiter.Comma, out var comma))
+                {
+                    Advance();
+                    argsDelims.Add(comma);
+
+                    continue;
+                }
+                else break;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen, out var closeInvoke))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close invocation parameter list"));
+                return null;
+            }
+
+            var invokeExpression = new LayeAst.Invoke(primary, openInvoke, args.ToArray(), argsDelims.ToArray(), closeInvoke);
+            return ReadPrimaryExpressionSuffix(invokeExpression);
+        }
+
+        return primary;
     }
 }
