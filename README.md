@@ -15,3 +15,7 @@ layec cc hello.c
 ```
 
 (As this feature is built out, more example will be provided to illustrate the various uses.)
+
+# Self-hosted Development
+
+As different benchmarks are reached in the self-hosting of the language, they will be archived in subfolders of the main repository (like `self-0`) until enough stability is attained that the bootstrap folder can contain some form of portable code (like C or assembly) to become the defacto bootstrap source. During the time that these self-hosting stages are present, the process to build the current version of the compiler will be to build the bootstrap compiler and then each self-hosting compiler in sequence until the final version can compile itself and is used for further development. Shell scripts will be maintained to automate that process.
