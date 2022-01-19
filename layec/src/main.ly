@@ -4,7 +4,11 @@
 //extern nocontext i32 printf(u8 *format, varargs);
 //extern i32 printf(u8 *format, varargs);
 
+i32 putchar(i32 c);
+i32 printf(u8 *format, varargs);
+
 void main()
 {
-    printf("Hello, hunter!%c", 10);
+    printf("Hello, hunter!");
+    putchar(10);
 }

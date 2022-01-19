@@ -109,7 +109,6 @@ public enum Keyword
 
     Void,
     Bool,
-
     Rune,
 
     RawPtr,
@@ -164,7 +163,7 @@ public enum Keyword
     Export,
     Extern,
     Inline,
-    //Naked,
+    Naked,
 
     _FunctionHint_Modifier_End_,
 
@@ -172,7 +171,7 @@ public enum Keyword
 
     Const, // const makes something actually a compile time constant
     ReadOnly, // readonly make something only readable (either only reading a binding, but not reassigning OR not allowing writes thru containers)
-    //WriteOnly,
+    WriteOnly,
 
     _Accessibility_Modifier_End_,
 

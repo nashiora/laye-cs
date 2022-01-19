@@ -1,4 +1,5 @@
 ﻿#define ALLOW_RADIX_INTEGERS
+#define ALLOW_ARBITRARY_SIZED_PRIMITIVES
 
 namespace laye.Compiler;
 
@@ -366,8 +367,96 @@ internal sealed class LayeLexer
         string identifier = span.ToString(m_sourceText);
 
         // TODO(local): pick out keywords from identifiers plz
+        switch (identifier)
+        {
+            case "int": return new LayeToken.Keyword(span, Keyword.Int);
+            case "i8": return new LayeToken.Keyword(span, Keyword.SizedInt, 8);
+            case "i16": return new LayeToken.Keyword(span, Keyword.SizedInt, 16);
+            case "i32": return new LayeToken.Keyword(span, Keyword.SizedInt, 32);
+            case "i64": return new LayeToken.Keyword(span, Keyword.SizedInt, 64);
+            case "i128": return new LayeToken.Keyword(span, Keyword.SizedInt, 128);
 
-        return new LayeToken.Identifier(span, identifier);
+            case "uint": return new LayeToken.Keyword(span, Keyword.UInt);
+            case "u8": return new LayeToken.Keyword(span, Keyword.SizedUInt, 8);
+            case "u16": return new LayeToken.Keyword(span, Keyword.SizedUInt, 16);
+            case "u32": return new LayeToken.Keyword(span, Keyword.SizedUInt, 32);
+            case "u64": return new LayeToken.Keyword(span, Keyword.SizedUInt, 64);
+            case "u128": return new LayeToken.Keyword(span, Keyword.SizedUInt, 128);
+
+            case "float": return new LayeToken.Keyword(span, Keyword.Float);
+            case "f32": return new LayeToken.Keyword(span, Keyword.SizedFloat, 32);
+            case "f64": return new LayeToken.Keyword(span, Keyword.SizedFloat, 64);
+
+            case "void": return new LayeToken.Keyword(span, Keyword.Void);
+            case "bool": return new LayeToken.Keyword(span, Keyword.Bool);
+            case "rune": return new LayeToken.Keyword(span, Keyword.Rune);
+
+            case "rawptr": return new LayeToken.Keyword(span, Keyword.RawPtr);
+            case "noreturn": return new LayeToken.Keyword(span, Keyword.NoReturn);
+            case "dynamic": return new LayeToken.Keyword(span, Keyword.Dynamic);
+
+            case "struct": return new LayeToken.Keyword(span, Keyword.Struct);
+            case "enum": return new LayeToken.Keyword(span, Keyword.Enum);
+
+            case "varargs": return new LayeToken.Keyword(span, Keyword.VarArgs);
+
+            case "true": return new LayeToken.Keyword(span, Keyword.True);
+            case "false": return new LayeToken.Keyword(span, Keyword.False);
+
+            case "nullptr": return new LayeToken.Keyword(span, Keyword.NullPtr);
+            case "nil": return new LayeToken.Keyword(span, Keyword.Nil);
+
+            case "context": return new LayeToken.Keyword(span, Keyword.Context);
+            case "global": return new LayeToken.Keyword(span, Keyword.Global);
+
+            case "noinit": return new LayeToken.Keyword(span, Keyword.NoInit);
+
+            case "public": return new LayeToken.Keyword(span, Keyword.Public);
+            case "nocontext": return new LayeToken.Keyword(span, Keyword.NoContext);
+            case "cdecl": return new LayeToken.Keyword(span, Keyword.CDecl);
+            case "fastcall": return new LayeToken.Keyword(span, Keyword.FastCall);
+            case "stdcall": return new LayeToken.Keyword(span, Keyword.StdCall);
+            case "intrinsic": return new LayeToken.Keyword(span, Keyword.Intrinsic);
+            case "export": return new LayeToken.Keyword(span, Keyword.Export);
+            case "extern": return new LayeToken.Keyword(span, Keyword.Extern);
+            case "inline": return new LayeToken.Keyword(span, Keyword.Inline);
+            case "naked": return new LayeToken.Keyword(span, Keyword.Naked);
+            case "const": return new LayeToken.Keyword(span, Keyword.Const);
+            case "readonly": return new LayeToken.Keyword(span, Keyword.ReadOnly);
+            case "writeonly": return new LayeToken.Keyword(span, Keyword.WriteOnly);
+
+            case "and": return new LayeToken.Keyword(span, Keyword.And);
+            case "or": return new LayeToken.Keyword(span, Keyword.Or);
+            case "xor": return new LayeToken.Keyword(span, Keyword.Xor);
+            case "not": return new LayeToken.Keyword(span, Keyword.Not);
+            case "cast": return new LayeToken.Keyword(span, Keyword.Cast);
+
+            case "if": return new LayeToken.Keyword(span, Keyword.If);
+            case "else": return new LayeToken.Keyword(span, Keyword.Else);
+            case "while": return new LayeToken.Keyword(span, Keyword.While);
+            case "for": return new LayeToken.Keyword(span, Keyword.For);
+            case "switch": return new LayeToken.Keyword(span, Keyword.Switch);
+            case "case": return new LayeToken.Keyword(span, Keyword.Case);
+            case "default": return new LayeToken.Keyword(span, Keyword.Default);
+            case "return": return new LayeToken.Keyword(span, Keyword.Return);
+            case "break": return new LayeToken.Keyword(span, Keyword.Break);
+            case "continue": return new LayeToken.Keyword(span, Keyword.Continue);
+            case "yield": return new LayeToken.Keyword(span, Keyword.Yield);
+
+            default:
+#if ALLOW_ARBITRARY_SIZED_PRIMITIVES
+                if (identifier[0] == 'i' || identifier[0] == 'u' || identifier[0] == 'f')
+                {
+                    if (!identifier.Skip(1).Any(c => !char.IsDigit(c)))
+                    {
+                        var kw = identifier[0] == 'i' ? Keyword.SizedInt : identifier[0] == 'u' ? Keyword.SizedUInt : Keyword.SizedFloat;
+                        return new LayeToken.Keyword(span, kw, uint.Parse(identifier.AsSpan()[1..]));
+                    }
+                }
+#endif
+
+                return new LayeToken.Identifier(span, identifier);
+        }
     }
 
     private LayeToken? ReadStringLiteral()
@@ -415,6 +504,7 @@ internal sealed class LayeLexer
             m_diagnostics.Add(new Diagnostic.Error(new(startLocation, CurrentLocation), "unfinished character literal"));
             return null;
         }
+
         Advance();
         var totalSpan = new SourceSpan(startLocation, CurrentLocation);
 

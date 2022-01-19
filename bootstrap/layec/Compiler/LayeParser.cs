@@ -312,8 +312,52 @@ public sealed class LayeParser
             return null;
         }
 
-        var paramData = Array.Empty<LayeAst.ParamData>();
-        var paramDelims = Array.Empty<LayeToken.Delimiter>();
+        var paramData = new List<LayeAst.ParamData>();
+        var paramDelims = new List<LayeToken.Delimiter>();
+
+        VarArgsKind vaKind = VarArgsKind.None;
+        LayeToken.Keyword? varargsKeyword = null;
+
+        while (!CheckDelimiter(Delimiter.CloseParen, out var _))
+        {
+            if (CheckKeyword(Keyword.VarArgs, out varargsKeyword))
+            {
+                Advance(); // `varargs`
+
+                if (CheckDelimiter(Delimiter.CloseParen, out var _))
+                {
+                    vaKind = VarArgsKind.C;
+                    break;
+                }
+                else vaKind = VarArgsKind.Laye;
+            }
+
+            var paramType = TryReadTypeNode(true);
+            if (paramType is null)
+            {
+                AssertHasError("failing to parse function parameter type");
+                return null;
+            }
+
+            if (!ExpectIdentifier(out var paramName))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as parameter name"));
+                return null;
+            }
+
+            var paramBinding = new LayeAst.BindingData(Array.Empty<LayeAst.Modifier>(), paramType, paramName);
+            paramData.Add(new LayeAst.ParamData(paramBinding, null, null));
+
+            if (vaKind != VarArgsKind.None)
+                break;
+
+            if (CheckDelimiter(Delimiter.Comma, out var comma))
+            {
+                Advance(); // `,`
+                paramDelims.Add(comma);
+            }
+            else break;
+        }
 
         if (!ExpectDelimiter(Delimiter.CloseParen, out var closeParams))
         {
@@ -321,20 +365,26 @@ public sealed class LayeParser
             return null;
         }
 
-        LayeAst.FunctionBody body;
-        
         // TODO(local): other function body kinds
-
-        var bodyBlock = ReadBlock();
-        if (bodyBlock is null)
+        LayeAst.FunctionBody body;
+        if (CheckDelimiter(Delimiter.SemiColon, out var emptyBodySemi))
         {
-            AssertHasError("failing to read function block body");
-            return null;
+            Advance(); // `;`
+            body = new LayeAst.EmptyFunctionBody(emptyBodySemi);
+        }
+        else
+        {
+            var bodyBlock = ReadBlock();
+            if (bodyBlock is null)
+            {
+                AssertHasError("failing to read function block body");
+                return null;
+            }
+
+            body = new LayeAst.BlockFunctionBody(bodyBlock);
         }
 
-        body = new LayeAst.BlockFunctionBody(bodyBlock);
-
-        return new LayeAst.FunctionDeclaration(modifiers, returnType, functionName, openParams, paramData, paramDelims, closeParams, body);
+        return new LayeAst.FunctionDeclaration(modifiers, returnType, functionName, openParams, paramData.ToArray(), paramDelims.ToArray(), varargsKeyword, vaKind, closeParams, body);
     }
 
     private LayeAst.Block? ReadBlock()
