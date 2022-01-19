@@ -444,19 +444,43 @@ public sealed class LayeParser
     {
         LayeAst.Expr? result = null;
 
-        if (CheckIdentifier(out var ident))
+        if (CheckDelimiter(Delimiter.OpenParen, out var openGrouped))
         {
-            Advance();
+            Advance(); // `(`
+
+            var groupedExpression = ReadExpression();
+            if (groupedExpression is null)
+            {
+                AssertHasError("failing to parse expression in parenthetical grouping");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen, out var closeGrouped))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close grouped expression"));
+                return null;
+            }
+
+            result = new LayeAst.GroupedExpression(openGrouped, groupedExpression, closeGrouped);
+        }
+        else if (CheckIdentifier(out var ident))
+        {
+            Advance(); // identifier
             result = new LayeAst.NameLookup(ident);
         }
         else if (Check<LayeToken.Integer>(out var integerLit))
         {
-            Advance();
+            Advance(); // integer
             result = new LayeAst.Integer(integerLit);
+        }
+        else if (Check<LayeToken.Float>(out var floatLit))
+        {
+            Advance(); // float
+            result = new LayeAst.Float(floatLit);
         }
         else if (Check<LayeToken.String>(out var stringLit))
         {
-            Advance();
+            Advance(); // string
             result = new LayeAst.String(stringLit);
         }
         else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));
