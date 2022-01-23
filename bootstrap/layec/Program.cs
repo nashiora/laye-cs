@@ -34,13 +34,13 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
     // Console.WriteLine(string.Join(Environment.NewLine, sourceFiles));
 
     var diagnostics = new List<Diagnostic>();
-    var sourceSyntaxes = new Dictionary<string, LayeAst[]>();
+    var sourceSyntaxes = new Dictionary<string, LayeAstRoot>();
     var globalSymbols = new SymbolTable();
 
     foreach (string sourceFile in sourceFiles)
     {
         var sourceSyntax = LayeParser.ParseSyntaxFromFile(sourceFile, diagnostics);
-        sourceSyntaxes[sourceFile] = sourceSyntax;
+        sourceSyntaxes[sourceFile] = new(sourceSyntax);
 
         if (args.PrintSyntaxTrees)
         {
@@ -48,6 +48,14 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
             prettyPrinter.PrettyPrint(sourceSyntax);
         }
     }
+
+    if (diagnostics.Any(d => d is Diagnostic.Error))
+    {
+        PrintDiagnostics(diagnostics);
+        return 1;
+    }
+
+    var irModule = LayeChecker.CheckSyntax(sourceSyntaxes.Values.ToArray(), globalSymbols, diagnostics);
 
     if (diagnostics.Any(d => d is Diagnostic.Error))
     {

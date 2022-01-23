@@ -1,6 +1,10 @@
 ﻿namespace laye;
 
-public abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
+internal sealed record class LayeAstRoot(LayeAst[] TopLevelNodes)
+{
+}
+
+internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 {
     #region Shared Data
 

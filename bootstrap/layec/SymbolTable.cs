@@ -13,11 +13,80 @@ public sealed class SymbolTable
     }
 }
 
-public abstract record class Symbol(string Name, SymbolType Type)
+public abstract record class Symbol
 {
-    public sealed record class Binding(string Name, SymbolType Type) : Symbol(Name, Type);
-    public sealed record class Function(string Name, SymbolType.Function FunctionType) : Symbol(Name, FunctionType);
-    public sealed record class Struct(string Name, SymbolType.Struct StructType) : Symbol(Name, StructType);
+    public string Name { get; init; }
+    public SymbolType? Type { get; set; }
+
+    protected Symbol(string name)
+        : this(name, default)
+    {
+    }
+
+    protected Symbol(string name, SymbolType? type)
+    {
+        Name = name;
+        Type = type;
+    }
+
+    public sealed record class Binding : Symbol
+    {
+        public Binding(string name)
+            : base(name)
+        {
+        }
+
+        public Binding(string name, SymbolType? type)
+            : base(name, type)
+        {
+        }
+    }
+
+    public sealed record class Function : Symbol<SymbolType.Function>
+    {
+        public Function(string name)
+            : base(name)
+        {
+        }
+
+        public Function(string name, SymbolType.Function? type)
+            : base(name, type)
+        {
+        }
+    }
+
+    public sealed record class Struct : Symbol<SymbolType.Struct>
+    {
+        public Struct(string name)
+            : base(name)
+        {
+        }
+
+        public Struct(string name, SymbolType.Struct? type)
+            : base(name, type)
+        {
+        }
+    }
+}
+
+public abstract record class Symbol<TSymbolType> : Symbol
+    where TSymbolType : SymbolType
+{
+    public new TSymbolType? Type
+    {
+        get => base.Type as TSymbolType;
+        set => base.Type = value;
+    }
+
+    protected Symbol(string name)
+        : base(name, default)
+    {
+    }
+
+    protected Symbol(string name, TSymbolType? type)
+        : base(name, type)
+    {
+    }
 }
 
 public abstract record class SymbolType(string Name)
@@ -25,17 +94,23 @@ public abstract record class SymbolType(string Name)
     /// <summary>
     /// Represents a type that references a type parameter
     /// </summary>
-    /// <param name="Name"></param>
     public sealed record class Param(string Name) : SymbolType(Name);
 
     public sealed record class Void() : SymbolType("void");
     public sealed record class Bool() : SymbolType("bool");
+    public sealed record class Rune() : SymbolType("rune");
 
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
-    public sealed record class SizedInteger(bool Signed, int BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
+    public sealed record class SizedInteger(bool Signed, uint BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
 
     public sealed record class Float() : SymbolType("float");
-    public sealed record class SizedFloat(int BitCount) : SymbolType($"f{BitCount}");
+    public sealed record class SizedFloat(uint BitCount) : SymbolType($"f{BitCount}");
+
+    public sealed record class RawPtr() : SymbolType("rawptr");
+    public sealed record class Array(SymbolType ElementType, uint Capacity) : SymbolType("array");
+    public sealed record class Pointer(SymbolType ElementType) : SymbolType("pointer");
+    public sealed record class Buffer(SymbolType ElementType) : SymbolType("buffer");
+    public sealed record class Slice(SymbolType ElementType) : SymbolType("slice");
 
     public sealed record class Function(string Name, TypeParam[] TypeParams, CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs) : SymbolType($"function {Name}");
     public sealed record class Struct(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);

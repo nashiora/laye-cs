@@ -1,6 +1,6 @@
 ﻿namespace laye;
 
-public sealed class DebugPrettyPrinter
+internal sealed class DebugPrettyPrinter
 {
     private static IEnumerable<IHasSourceSpan> GetChildren(IHasSourceSpan node)
     {

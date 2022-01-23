@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace laye.Compiler;
 
-public sealed class LayeParser
+internal sealed class LayeParser
 {
     public static LayeAst[] ParseSyntaxFromFile(string sourceFilePath, List<Diagnostic> diagnostics)
     {
@@ -57,7 +57,7 @@ public sealed class LayeParser
 
     private void AssertHasError(string context)
     {
-        Debug.Assert(m_diagnostics.Any(d => d is Diagnostic.Error), $"No diagnostics generated when {context}");
+        Debug.Assert(m_diagnostics.Any(d => d is Diagnostic.Error), $"No error diagnostics generated when {context}");
     }
 
     #region Token Traversal
@@ -249,7 +249,7 @@ public sealed class LayeParser
             {
                 Advance(); // `[`
 
-                if (!ExpectDelimiter(Delimiter.CloseBracket, out var closeBracketDelim))
+                if (CheckDelimiter(Delimiter.CloseBracket, out var closeBracketDelim))
                 {
                     Advance(); // `]`
                     type = new LayeAst.SliceType(type, containerModifiers, openBracketDelim, closeBracketDelim);
@@ -282,8 +282,8 @@ public sealed class LayeParser
     {
         return ReadFunctionDeclaration();
 
-        m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token at top level"));
-        return null;
+        //m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token at top level"));
+        //return null;
     }
     
     private LayeAst? ReadFunctionDeclaration()

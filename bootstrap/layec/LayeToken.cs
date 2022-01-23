@@ -2,7 +2,7 @@
 
 namespace laye;
 
-public abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
+internal abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
 {
     public sealed record class Integer(SourceSpan SourceSpan, ulong LiteralValue) : LayeToken(SourceSpan);
     public sealed record class Float(SourceSpan SourceSpan, double LiteralValue) : LayeToken(SourceSpan);
@@ -16,7 +16,7 @@ public abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Keyword(SourceSpan SourceSpan, laye.Keyword Kind, uint SizeData = 0) : LayeToken(SourceSpan);
 }
 
-public static class TokenKeywordExt
+internal static class TokenKeywordExt
 {
     public static bool IsModifier(this LayeToken.Keyword kw)
         => kw.Kind > Keyword._Modifier_Start_ && kw.Kind < Keyword._Modifier_End_;
@@ -40,7 +40,7 @@ public static class TokenKeywordExt
     }
 }
 
-public enum Delimiter
+internal enum Delimiter
 {
     Invalid = 0,
 
@@ -65,7 +65,7 @@ public enum Delimiter
     QuestionDot,
 }
 
-public enum Operator
+internal enum Operator
 {
     Invalid = 0,
 
@@ -93,7 +93,7 @@ public enum Operator
     CompareLessThanOrEqual,
 }
 
-public enum Keyword
+internal enum Keyword
 {
     Invalid = 0,
 
