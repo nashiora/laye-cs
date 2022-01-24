@@ -53,7 +53,11 @@ internal sealed class LayeChecker
                         var sym = new Symbol.Function(fnDecl.Name.Image);
                         syms[fnDecl] = sym;
 
-                        m_symbols.AddSymbol(sym);
+                        if (!m_symbols.AddSymbol(sym))
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, $"`{sym.Name}` is already define in this scope (function overloading is not supported)"));
+                            return null;
+                        }
                     } break;
                 }
             }
@@ -115,6 +119,15 @@ internal sealed class LayeChecker
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
                         var sym = (Symbol.Function)syms[fnDecl];
+
+                        var fn = CheckFunction(fnDecl, sym);
+                        if (fn is null)
+                        {
+                            AssertHasErrors("failing to compile function");
+                            return null;
+                        }
+
+                        irFunctions.Add(fn);
                     } break;
                 }
             }
@@ -187,6 +200,152 @@ internal sealed class LayeChecker
                 m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unrecognized type)"));
                 return null;
             }
+        }
+    }
+
+    private LayeIr.Function? CheckFunction(LayeAst.FunctionDeclaration fnDecl, Symbol.Function sym)
+    {
+        var functionBuilder = new LayeIrFunctionBuilder(fnDecl.Name, sym);
+
+        switch (fnDecl.Body)
+        {
+            case LayeAst.EmptyFunctionBody: return functionBuilder.Build();
+
+            case LayeAst.BlockFunctionBody blockFunctionBody:
+            {
+                var entryBlock = functionBuilder.AppendBasicBlock();
+                functionBuilder.PositionAtEnd(entryBlock);
+
+                foreach (var childNode in blockFunctionBody.BodyBlock.Body)
+                {
+                    if (!CheckStatement(functionBuilder, childNode))
+                    {
+                        AssertHasErrors("failing to check statement in function body block");
+                        return null;
+                    }
+                }
+            } break;
+        }
+
+        // TODO(local): validate before build (unterminated blocks will throw, so instead report errors before attempting to build)
+
+        if (sym.Type!.ReturnType is SymbolType.Void)
+        {
+            foreach (var block in functionBuilder.BasicBlocks)
+            {
+                if (block.TerminatorInstruction is null)
+                    block.TerminatorInstruction = new LayeIr.ReturnVoid(fnDecl.Name.SourceSpan);
+            }
+        }
+        else
+        {
+            foreach (var block in functionBuilder.BasicBlocks)
+            {
+                if (block.TerminatorInstruction is null)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, "not all code paths return a value"));
+                    return null;
+                }
+            }
+        }
+
+        return functionBuilder.Build();
+    }
+
+    private bool CheckStatement(LayeIrFunctionBuilder builder, LayeAst.Stmt statement)
+    {
+        switch (statement)
+        {
+            case LayeAst.ExpressionStatement exprStmt: return CheckExpression(builder, exprStmt.Expression) is not null;
+
+            default:
+            {
+                m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "unrecognized statement type"));
+                return false;
+            }
+        }
+    }
+
+    private LayeIr.Value? CheckExpression(LayeIrFunctionBuilder builder, LayeAst.Expr statement)
+    {
+        switch (statement)
+        {
+            case LayeAst.Integer intExpr: return builder.BuildInteger(intExpr.Literal.SourceSpan, intExpr.Literal.LiteralValue);
+            case LayeAst.String stringExpr: return builder.BuildString(stringExpr.Literal.SourceSpan, stringExpr.Literal.LiteralValue);
+
+            case LayeAst.Invoke invokeExpr: return CheckInvoke(builder, invokeExpr);
+
+            default:
+            {
+                m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "unrecognized expression type"));
+                return null;
+            }
+        }
+    }
+
+    private LayeIr.Value? CheckInvoke(LayeIrFunctionBuilder builder, LayeAst.Invoke invoke)
+    {
+        var argValues = new List<LayeIr.Value>();
+
+        foreach (var arg in invoke.Arguments)
+        {
+            var argValue = CheckExpression(builder, arg);
+            if (argValue is null)
+            {
+                AssertHasErrors("failing to check invocation argument");
+                return null;
+            }
+
+            argValues.Add(argValue);
+        }
+
+        if (invoke.TargetExpression is LayeAst.NameLookup targetNameLookup)
+        {
+            string targetName = targetNameLookup.Image;
+            if (!m_symbols.TryGetSymbol(targetName, out var symbol))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"failed to find function `{targetName}`"));
+                return null;
+            }
+
+            if (symbol is not Symbol.Function fnSymbol)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"failed to find function `{targetName}`"));
+                return null;
+            }
+
+            Debug.Assert(fnSymbol.Type is not null, "function declaration was not yet type checked");
+            var targetParamTypes = fnSymbol.Type.ParameterTypes;
+
+            switch (fnSymbol.Type.VarArgs)
+            {
+                case VarArgsKind.None:
+                {
+                    if (targetParamTypes.Length != argValues.Count)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected {targetParamTypes.Length} arguments to function `{targetName}`, got {argValues.Count}"));
+                        return null;
+                    }
+                } break;
+
+                case VarArgsKind.C:
+                {
+                    if (targetParamTypes.Length > argValues.Count)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected at least {targetParamTypes.Length} arguments to C-style varargs function `{targetName}`, got {argValues.Count}"));
+                        return null;
+                    }
+                } break;
+
+                default: throw new NotImplementedException($"varargs kind not handled in checker");
+            }
+
+            return builder.BuildInvokeGlobalFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());
+        }
+        else
+        {
+            m_diagnostics.Add(new Diagnostic.Error(invoke.TargetExpression.SourceSpan, "can only invoke top level functions"));
+            return null;
         }
     }
 }

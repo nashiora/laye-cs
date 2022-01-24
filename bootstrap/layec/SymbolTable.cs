@@ -1,19 +1,22 @@
 ﻿namespace laye;
 
-public sealed class SymbolTable
+internal sealed class SymbolTable
 {
-    private readonly Dictionary<string, List<Symbol>> m_symbols = new();
+    private readonly Dictionary<string, Symbol> m_symbols = new();
 
-    public void AddSymbol(Symbol symbol)
+    public bool AddSymbol(Symbol symbol)
     {
-        if (!m_symbols.TryGetValue(symbol.Name, out var symbols))
-            m_symbols[symbol.Name] = symbols = new();
+        if (m_symbols.ContainsKey(symbol.Name))
+            return false;
 
-        symbols.Add(symbol);
+        m_symbols[symbol.Name] = symbol;
+        return true;
     }
+
+    public bool TryGetSymbol(string symbolName, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out Symbol symbol) => m_symbols.TryGetValue(symbolName, out symbol);
 }
 
-public abstract record class Symbol
+internal abstract record class Symbol
 {
     public string Name { get; init; }
     public SymbolType? Type { get; set; }
@@ -69,7 +72,7 @@ public abstract record class Symbol
     }
 }
 
-public abstract record class Symbol<TSymbolType> : Symbol
+internal abstract record class Symbol<TSymbolType> : Symbol
     where TSymbolType : SymbolType
 {
     public new TSymbolType? Type
@@ -89,7 +92,7 @@ public abstract record class Symbol<TSymbolType> : Symbol
     }
 }
 
-public abstract record class SymbolType(string Name)
+internal abstract record class SymbolType(string Name)
 {
     /// <summary>
     /// Represents a type that references a type parameter
@@ -118,7 +121,7 @@ public abstract record class SymbolType(string Name)
     public sealed record class Enum(string Name, (string Name, uint Value)[] Variants) : SymbolType(Name);
 }
 
-public abstract record class TypeParam(string Name)
+internal abstract record class TypeParam(string Name)
 {
     // e.g. vec2<T>
     public sealed record class TypeName(string Name) : TypeParam(Name);
