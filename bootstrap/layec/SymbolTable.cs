@@ -100,8 +100,10 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Param(string Name) : SymbolType(Name);
 
     public sealed record class Void() : SymbolType("void");
-    public sealed record class Bool() : SymbolType("bool");
     public sealed record class Rune() : SymbolType("rune");
+
+    public sealed record class Bool() : SymbolType("bool");
+    public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
     public sealed record class SizedInteger(bool Signed, uint BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
@@ -110,12 +112,12 @@ internal abstract record class SymbolType(string Name)
     public sealed record class SizedFloat(uint BitCount) : SymbolType($"f{BitCount}");
 
     public sealed record class RawPtr() : SymbolType("rawptr");
-    public sealed record class Array(SymbolType ElementType, uint Capacity) : SymbolType("array");
-    public sealed record class Pointer(SymbolType ElementType) : SymbolType("pointer");
-    public sealed record class Buffer(SymbolType ElementType) : SymbolType("buffer");
-    public sealed record class Slice(SymbolType ElementType) : SymbolType("slice");
+    public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType("array");
+    public sealed record class Pointer(SymbolType ElementType, bool ReadOnly = false) : SymbolType("pointer");
+    public sealed record class Buffer(SymbolType ElementType, bool ReadOnly = false) : SymbolType("buffer");
+    public sealed record class Slice(SymbolType ElementType, bool ReadOnly = false) : SymbolType("slice");
 
-    public sealed record class Function(string Name, TypeParam[] TypeParams, CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs) : SymbolType($"function {Name}");
+    public sealed record class Function(string Name, TypeParam[] TypeParams, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs) : SymbolType($"function {Name}");
     public sealed record class Struct(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
     public sealed record class Union(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Variants) : SymbolType(Name);
     public sealed record class Enum(string Name, (string Name, uint Value)[] Variants) : SymbolType(Name);

@@ -1,6 +1,9 @@
 ﻿#define NO_DEFAULT_SOURCE_DIRECTORY // if we allow `./` as the default target, we shouldn't print help text on no arguments given. This flag controls wether or not `layec` prints help text when no arguments are passed
 
 using laye;
+using laye.Backends;
+using laye.Backends.Llvm;
+using laye.Backends.Msil;
 using laye.Compiler;
 
 var cmdParser = new CommandLine.Parser(config =>
@@ -63,6 +66,28 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         return 1;
     }
 
+    IBackend backend;
+    switch (args.Backend)
+    {
+        case Backend.Msil: backend = new MsilBackend(); break;
+        case Backend.Llvm: backend = new LlvmBackend(); break;
+        default: throw new NotImplementedException();
+    }
+
+    var backendOptions = new BackendOptions()
+    {
+        OutputFileName = args.OutputFileName,
+        KeepTemporaryFiles = args.KeepTemporaryFiles,
+    };
+
+    backend.Compile(new[] { irModule }, backendOptions);
+
+    if (diagnostics.Any(d => d is Diagnostic.Error))
+    {
+        PrintDiagnostics(diagnostics);
+        return 1;
+    }
+
     PrintDiagnostics(diagnostics);
     return 0;
 }
@@ -112,8 +137,11 @@ sealed class ProgramArgs
         HelpText = "A path to either a file or a directory. If a file is given, just that file is compiled. If a directory is given, all source files within that directory are compiled into the same output program. Use the --no-recursive-source flag to only use the top level of the provided directory.")]
     public string SourcePath { get; set; } = "./";
 
+    [CommandLine.Option("il", Default = false, HelpText = "Compile Laye IL files instead of source files.")]
+    public bool CompileIL { get; set; } = false;
+
     [CommandLine.Option('o', "output", Default = "./output.exe", HelpText = "The output file path.")]
-    public string OutputFilePath { get; set; } = "./output.exe";
+    public string OutputFileName { get; set; } = "./output.exe";
 
     [CommandLine.Option("no-recursive-source", Default = false, HelpText = "Disables recursive directory searching when compiling a source directory.")]
     public bool NoRecursiveSourceDirectory { get; set; } = false;
@@ -121,9 +149,11 @@ sealed class ProgramArgs
     [CommandLine.Option("temp-files", Default = false, HelpText = "Keeps temporary files around after compilation.")]
     public bool KeepTemporaryFiles { get; set; } = false;
 
+    [CommandLine.Option("backend", Default = Backend.Llvm, HelpText = "The backend used to generate the output file.")]
+    public Backend Backend { get; set; } = Backend.Llvm;
+
     [CommandLine.Option("help", Default = false, HelpText = "Display this help documentation.")]
     public bool ShowHelp { get; set; } = false;
-
 
     [CommandLine.Option("print-syntax", Default = false, HelpText = "Pretty-print syntax trees as they are parsed.")]
     public bool PrintSyntaxTrees { get; set; } = false;

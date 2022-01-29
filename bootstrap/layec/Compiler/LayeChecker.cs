@@ -84,7 +84,7 @@ internal sealed class LayeChecker
                             return null;
                         }
 
-                        var paramTypes = new List<SymbolType>();
+                        var paramInfos = new List<(SymbolType, string)>();
                         foreach (var paramAstType in fnDecl.Parameters)
                         {
                             var paramType = ResolveType(paramAstType.Binding.BindingType);
@@ -94,13 +94,13 @@ internal sealed class LayeChecker
                                 return null;
                             }
 
-                            paramTypes.Add(paramType);
+                            paramInfos.Add((paramType, paramAstType.Binding.BindingName.Image));
                         }
 
-                        var ccKind = CallingConvention.None;
+                        var ccKind = CallingConvention.LayeNoContext;
                         var vaKind = fnDecl.VarArgsKind;
 
-                        sym.Type = new SymbolType.Function(fnDecl.Name.Image, Array.Empty<TypeParam>(), ccKind, returnType, paramTypes.ToArray(), vaKind);
+                        sym.Type = new SymbolType.Function(fnDecl.Name.Image, Array.Empty<TypeParam>(), ccKind, returnType, paramInfos.ToArray(), vaKind);
                     } break;
                 }
             }
@@ -315,24 +315,24 @@ internal sealed class LayeChecker
             }
 
             Debug.Assert(fnSymbol.Type is not null, "function declaration was not yet type checked");
-            var targetParamTypes = fnSymbol.Type.ParameterTypes;
+            var targetParams = fnSymbol.Type.Parameters;
 
             switch (fnSymbol.Type.VarArgs)
             {
                 case VarArgsKind.None:
                 {
-                    if (targetParamTypes.Length != argValues.Count)
+                    if (targetParams.Length != argValues.Count)
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected {targetParamTypes.Length} arguments to function `{targetName}`, got {argValues.Count}"));
+                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected {targetParams.Length} arguments to function `{targetName}`, got {argValues.Count}"));
                         return null;
                     }
                 } break;
 
                 case VarArgsKind.C:
                 {
-                    if (targetParamTypes.Length > argValues.Count)
+                    if (targetParams.Length > argValues.Count)
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected at least {targetParamTypes.Length} arguments to C-style varargs function `{targetName}`, got {argValues.Count}"));
+                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected at least {targetParams.Length} arguments to C-style varargs function `{targetName}`, got {argValues.Count}"));
                         return null;
                     }
                 } break;
