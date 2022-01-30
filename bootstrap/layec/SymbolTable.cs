@@ -4,6 +4,13 @@ internal sealed class SymbolTable
 {
     private readonly Dictionary<string, Symbol> m_symbols = new();
 
+    public SymbolTable? Parent { get; }
+
+    public SymbolTable(SymbolTable? parent = null)
+    {
+        Parent = parent;
+    }
+
     public bool AddSymbol(Symbol symbol)
     {
         if (m_symbols.ContainsKey(symbol.Name))
@@ -105,11 +112,15 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Bool() : SymbolType("bool");
     public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 
+    public sealed record class UntypedInteger() : SymbolType("untyped int");
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
     public sealed record class SizedInteger(bool Signed, uint BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
 
+    public sealed record class UntypedFloat() : SymbolType("untyped float");
     public sealed record class Float() : SymbolType("float");
     public sealed record class SizedFloat(uint BitCount) : SymbolType($"f{BitCount}");
+
+    public sealed record class UntypedString() : SymbolType("untyped string");
 
     public sealed record class RawPtr() : SymbolType("rawptr");
     public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType("array");
@@ -121,6 +132,8 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Struct(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
     public sealed record class Union(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Variants) : SymbolType(Name);
     public sealed record class Enum(string Name, (string Name, uint Value)[] Variants) : SymbolType(Name);
+
+    public sealed override string ToString() => Name;
 }
 
 internal abstract record class TypeParam(string Name)

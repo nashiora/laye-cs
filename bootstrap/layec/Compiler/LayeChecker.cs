@@ -205,7 +205,8 @@ internal sealed class LayeChecker
 
     private LayeIr.Function? CheckFunction(LayeAst.FunctionDeclaration fnDecl, Symbol.Function sym)
     {
-        var functionBuilder = new LayeIrFunctionBuilder(fnDecl.Name, sym);
+        var functionScope = new SymbolTable(m_symbols);
+        var functionBuilder = new LayeIrFunctionBuilder(fnDecl.Name, sym, functionScope);
 
         switch (fnDecl.Body)
         {
@@ -270,8 +271,11 @@ internal sealed class LayeChecker
     {
         switch (statement)
         {
-            case LayeAst.Integer intExpr: return builder.BuildInteger(intExpr.Literal.SourceSpan, intExpr.Literal.LiteralValue);
-            case LayeAst.String stringExpr: return builder.BuildString(stringExpr.Literal.SourceSpan, stringExpr.Literal.LiteralValue);
+            //case LayeAst.NameLookup nameLookupExpr: { }
+
+            case LayeAst.Integer intExpr: return builder.BuildInteger(intExpr.Literal.SourceSpan, intExpr.Literal.LiteralValue, new SymbolType.UntypedInteger());
+            case LayeAst.Float floatExpr: return builder.BuildFloat(floatExpr.Literal.SourceSpan, floatExpr.Literal.LiteralValue, new SymbolType.UntypedFloat());
+            case LayeAst.String stringExpr: return builder.BuildString(stringExpr.Literal.SourceSpan, stringExpr.Literal.LiteralValue, new SymbolType.UntypedString());
 
             case LayeAst.Invoke invokeExpr: return CheckInvoke(builder, invokeExpr);
 
@@ -286,7 +290,6 @@ internal sealed class LayeChecker
     private LayeIr.Value? CheckInvoke(LayeIrFunctionBuilder builder, LayeAst.Invoke invoke)
     {
         var argValues = new List<LayeIr.Value>();
-
         foreach (var arg in invoke.Arguments)
         {
             var argValue = CheckExpression(builder, arg);
@@ -340,6 +343,20 @@ internal sealed class LayeChecker
                 default: throw new NotImplementedException($"varargs kind not handled in checker");
             }
 
+            for (int i = 0; i < argValues.Count; i++)
+            {
+                var arg = argValues[i];
+                var param = targetParams[i];
+
+                if (CheckImplicitTypeCast(builder, arg, param.Type) is not LayeIr.Value argCast)
+                {
+                    AssertHasErrors("failing to convert argument to the correct type");
+                    return null;
+                }
+
+                argValues[i] = argCast;
+            }
+
             return builder.BuildInvokeGlobalFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());
         }
         else
@@ -347,5 +364,43 @@ internal sealed class LayeChecker
             m_diagnostics.Add(new Diagnostic.Error(invoke.TargetExpression.SourceSpan, "can only invoke top level functions"));
             return null;
         }
+    }
+
+    private LayeIr.Value? CheckImplicitTypeCast(LayeIrFunctionBuilder builder, LayeIr.Value value, SymbolType targetType)
+    {
+        if (value.Type == targetType)
+            return value;
+
+        switch (value.Type)
+        {
+            case SymbolType.UntypedInteger:
+            {
+                if (targetType is SymbolType.Integer _targetIntType)
+                {
+                    if (value is LayeIr.Integer _int)
+                        return builder.BuildExpression(new LayeIr.Integer(_int.SourceSpan, _int.LiteralValue, _targetIntType));
+                }
+                else if (targetType is SymbolType.SizedInteger _targetSizedIntType)
+                {
+                    if (value is LayeIr.Integer _int)
+                        return builder.BuildExpression(new LayeIr.Integer(_int.SourceSpan, _int.LiteralValue, _targetSizedIntType));
+                }
+                else if (targetType is SymbolType.RawPtr)
+                    return builder.BuildIntToRawPtrCast(value);
+            } break;
+
+            case SymbolType.UntypedString:
+            {
+                //new SymbolType.Buffer(new SymbolType.SizedInteger(false, 8))
+                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == new SymbolType.SizedInteger(false, 8))
+                {
+                    if (value is LayeIr.String _string)
+                        return builder.BuildExpression(new LayeIr.String(_string.SourceSpan, _string.LiteralValue, _targetBufferType));
+                }
+            } break;
+        }
+
+        m_diagnostics.Add(new Diagnostic.Error(value.SourceSpan, $"unable to convert from {value.Type} to {targetType}"));
+        return null;
     }
 }

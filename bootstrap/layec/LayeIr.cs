@@ -23,15 +23,18 @@ internal abstract record class LayeIr(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Insn(SourceSpan SourceSpan) : LayeIr(SourceSpan);
     public abstract record class BranchInsn(SourceSpan SourceSpan) : LayeIr(SourceSpan);
-    public abstract record class Value(SourceSpan SourceSpan) : Insn(SourceSpan);
+    public abstract record class Value(SourceSpan SourceSpan, SymbolType Type) : Insn(SourceSpan);
 
     public sealed record class ReturnVoid(SourceSpan SourceSpan) : BranchInsn(SourceSpan);
     public sealed record class Return(SourceSpan SourceSpan, Value ReturnValue) : BranchInsn(SourceSpan);
 
-    public sealed record class Integer(SourceSpan SourceSpan, ulong LiteralValue) : Value(SourceSpan);
-    public sealed record class String(SourceSpan SourceSpan, string LiteralValue) : Value(SourceSpan);
+    public sealed record class Integer(SourceSpan SourceSpan, ulong LiteralValue, SymbolType Type) : Value(SourceSpan, Type);
+    public sealed record class Float(SourceSpan SourceSpan, double LiteralValue, SymbolType Type) : Value(SourceSpan, Type);
+    public sealed record class String(SourceSpan SourceSpan, string LiteralValue, SymbolType Type) : Value(SourceSpan, Type);
 
-    public sealed record class InvokeGlobalFunction(SourceSpan SourceSpan, Symbol.Function GlobalFunction, Value[] Arguments) : Value(SourceSpan);
+    public sealed record class InvokeGlobalFunction(SourceSpan SourceSpan, Symbol.Function GlobalFunction, Value[] Arguments) : Value(SourceSpan, GlobalFunction.Type!.ReturnType);
+
+    public sealed record class IntToRawPtrCast(SourceSpan SourceSpan, Value CastValue) : Value(SourceSpan, new SymbolType.RawPtr());
 
     #endregion
 }
@@ -48,11 +51,20 @@ internal sealed class LayeIrFunctionBuilder
 
     public IEnumerable<LayeIrBasicBlockBuilder> BasicBlocks => m_basicBlocks;
 
-    public LayeIrFunctionBuilder(LayeIr.Identifier name, Symbol.Function symbol)
+    public SymbolTable FunctionScope { get; }
+
+    private readonly Stack<SymbolTable> m_lexicalScopes = new();
+    public SymbolTable CurrentScope => m_lexicalScopes.TryPeek(out var result) ? result : FunctionScope;
+
+    public LayeIrFunctionBuilder(LayeIr.Identifier name, Symbol.Function symbol, SymbolTable functionScope)
     {
         m_name = name;
         m_symbol = symbol;
+        FunctionScope = functionScope;
     }
+
+    public void PushScope() => m_lexicalScopes.Push(new(CurrentScope));
+    public void PopScope() => m_lexicalScopes.Pop();
 
     public LayeIrBasicBlockBuilder AppendBasicBlock()
     {
@@ -79,20 +91,24 @@ internal sealed class LayeIrFunctionBuilder
         m_index++;
     }
 
-    private TValue BuildExpression<TValue>(TValue value)
+    public TValue BuildExpression<TValue>(TValue value)
         where TValue : LayeIr.Value
     {
         AddInstruction(value);
         return value;
     }
 
-    public LayeIr.Integer BuildString(LayeToken.Integer token) => BuildInteger(token.SourceSpan, token.LiteralValue);
-    public LayeIr.Integer BuildInteger(SourceSpan sourceSpan, ulong literalValue) => BuildExpression(new LayeIr.Integer(sourceSpan, literalValue));
-    public LayeIr.String BuildString(LayeToken.String token) => BuildString(token.SourceSpan, token.LiteralValue);
-    public LayeIr.String BuildString(SourceSpan sourceSpan, string literalValue) => BuildExpression(new LayeIr.String(sourceSpan, literalValue));
+    public LayeIr.Integer BuildInteger(LayeToken.Integer token, SymbolType type) => BuildInteger(token.SourceSpan, token.LiteralValue, type);
+    public LayeIr.Integer BuildInteger(SourceSpan sourceSpan, ulong literalValue, SymbolType type) => BuildExpression(new LayeIr.Integer(sourceSpan, literalValue, type));
+    public LayeIr.Float BuildFloat(LayeToken.Float token, SymbolType type) => BuildFloat(token.SourceSpan, token.LiteralValue, type);
+    public LayeIr.Float BuildFloat(SourceSpan sourceSpan, double literalValue, SymbolType type) => BuildExpression(new LayeIr.Float(sourceSpan, literalValue, type));
+    public LayeIr.String BuildString(LayeToken.String token, SymbolType type) => BuildString(token.SourceSpan, token.LiteralValue, type);
+    public LayeIr.String BuildString(SourceSpan sourceSpan, string literalValue, SymbolType type) => BuildExpression(new LayeIr.String(sourceSpan, literalValue, type));
 
     public LayeIr.InvokeGlobalFunction BuildInvokeGlobalFunction(SourceSpan sourceSpan, Symbol.Function fnSymbol, LayeIr.Value[] argValues)
         => BuildExpression(new LayeIr.InvokeGlobalFunction(sourceSpan, fnSymbol, argValues));
+
+    public LayeIr.IntToRawPtrCast BuildIntToRawPtrCast(LayeIr.Value value) => BuildExpression(new LayeIr.IntToRawPtrCast(value.SourceSpan, value));
 }
 
 internal sealed class LayeIrBasicBlockBuilder

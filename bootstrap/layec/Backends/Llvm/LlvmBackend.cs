@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Diagnostics;
 
 using LLVMSharp;
 using static LLVMSharp.LLVM;
@@ -18,7 +13,9 @@ internal sealed class LlvmBackend : IBackend
     public readonly SymbolType.Integer IntType = new(false);
     public readonly SymbolType.Integer UIntType = new(true);
 
-    public readonly SymbolType.SizedInteger Int32Type = new(false, 32);
+    public readonly SymbolType.SizedInteger Int32Type = new(true, 32);
+    public readonly SymbolType.SizedInteger Int64Type = new(true, 64);
+    public readonly SymbolType.SizedInteger UInt64Type = new(false, 64);
 
     public readonly SymbolType.Pointer U8PtrType = new(new SymbolType.SizedInteger(false, 8));
     public readonly SymbolType.Slice U8SlcType = new(new SymbolType.SizedInteger(false, 8));
@@ -104,7 +101,7 @@ internal sealed class LlvmBackend : IBackend
             clangProcessStartInfo.CreateNoWindow = true;
         }
 
-        var clangProcess = new System.Diagnostics.Process()
+        var clangProcess = new Process()
         {
             StartInfo = clangProcessStartInfo,
         };
@@ -240,16 +237,14 @@ internal sealed class LlvmBackend : IBackend
             {
                 switch (insn)
                 {
-                    case LayeIr.String _string: builder.SetValue(_string, builder.BuildGlobalStringPointer(_string.LiteralValue)); break;
-                    // TODO(local): the integer constants should have types associated with them
-                    case LayeIr.Integer _int: builder.SetValue(_int, builder.ConstInteger(Int32Type, _int.LiteralValue)); break;
-
                     case LayeIr.InvokeGlobalFunction _invokeGlobal:
                     {
                         var callResult = builder.BuildCall(_invokeGlobal.GlobalFunction, _invokeGlobal.Arguments);
                         if (_invokeGlobal.GlobalFunction.Type!.ReturnType is not SymbolType.Void)
                             builder.SetValue(_invokeGlobal, callResult);
                     } break;
+
+                    case LayeIr.Value value: CompileValue(builder, value); break;
 
                     default: throw new NotImplementedException();
                 }
@@ -261,6 +256,51 @@ internal sealed class LlvmBackend : IBackend
                 case LayeIr.ReturnVoid: builder.BuildReturnVoid(); break;
                 default: throw new NotImplementedException();
             }
+        }
+    }
+
+    private TypedLlvmValue CompileValue(LlvmFunctionBuilder builder, LayeIr.Value value)
+    {
+        switch (value)
+        {
+            case LayeIr.String _string:
+            {
+                TypedLlvmValue stringValue;
+                stringValue = builder.BuildGlobalStringPointer(_string.LiteralValue);
+                builder.SetValue(_string, stringValue);
+                return stringValue;
+            } break;
+
+            // TODO(local): the integer constants should have types associated with them
+            case LayeIr.Integer _int:
+            {
+                var intType = _int.Type;
+                intType = UInt64Type;
+
+                TypedLlvmValue intValue;
+                intValue = builder.ConstInteger(intType, _int.LiteralValue);
+                builder.SetValue(_int, intValue);
+                return intValue;
+            } break;
+
+            // TODO(local): the integer constants should have types associated with them
+            case LayeIr.IntToRawPtrCast _rawptrCast:
+            {
+                var toCastValue = CompileValue(builder, _rawptrCast.CastValue);
+                var castValue = builder.BuildIntToRawPtrCast(toCastValue);
+                builder.SetValue(_rawptrCast, castValue);
+                return castValue;
+            } break;
+
+            case LayeIr.InvokeGlobalFunction _invokeGlobal:
+            {
+                var callResult = builder.BuildCall(_invokeGlobal.GlobalFunction, _invokeGlobal.Arguments);
+                if (_invokeGlobal.GlobalFunction.Type!.ReturnType is not SymbolType.Void)
+                    builder.SetValue(_invokeGlobal, callResult);
+                return callResult;
+            } break;
+
+            default: throw new NotImplementedException();
         }
     }
 }
@@ -290,7 +330,7 @@ internal sealed class LlvmFunctionBuilder
         Debug.Assert(m_currentBlockIndex >= 0, "cannot build because we are not positioned within any blocks");
     }
 
-    public LLVMBasicBlockRef AppendBlock(string blockName = "")
+    public LLVMBasicBlockRef AppendBlock(string blockName = "block")
     {
         var block = AppendBasicBlock(FunctionValue, blockName);
         m_blocks.Add(block);
@@ -396,6 +436,12 @@ internal sealed class LlvmFunctionBuilder
             return new LlvmValueVoid();
 
         return new TypedLlvmValue(functionResult, functionSymbol.Type!.ReturnType);
+    }
+
+    public LlvmValue<SymbolType.RawPtr> BuildIntToRawPtrCast(TypedLlvmValue value)
+    {
+        var cast = BuildIntToPtr(Builder, value.Value, PointerType(VoidTypeInContext(Context), 0), "int.to.rawptr");
+        return new(cast, new());
     }
 }
 
