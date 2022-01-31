@@ -91,7 +91,7 @@ internal sealed class LlvmBackend : IBackend
             Arguments = clangArguments,
         };
 
-        if (!options.ShowClangOutput)
+        if (!options.ShowBackendOutput)
         {
             clangProcessStartInfo.RedirectStandardInput = false;
             clangProcessStartInfo.RedirectStandardOutput = false;
@@ -163,7 +163,7 @@ internal sealed class LlvmBackend : IBackend
                 else throw new NotImplementedException();
             }
 
-            case SymbolType.RawPtr: return PointerType(VoidTypeInContext(Context), 0);
+            case SymbolType.RawPtr: return PointerType(Int8TypeInContext(Context), 0);
             case SymbolType.Array array: return ArrayType(GetLlvmType(array.ElementType), array.ElementCount);
             case SymbolType.Pointer pointer: return PointerType(GetLlvmType(pointer.ElementType), 0);
             case SymbolType.Buffer buffer: return PointerType(GetLlvmType(buffer.ElementType), 0);
@@ -269,19 +269,16 @@ internal sealed class LlvmBackend : IBackend
                 stringValue = builder.BuildGlobalStringPointer(_string.LiteralValue);
                 builder.SetValue(_string, stringValue);
                 return stringValue;
-            } break;
+            }
 
             // TODO(local): the integer constants should have types associated with them
             case LayeIr.Integer _int:
             {
-                var intType = _int.Type;
-                intType = UInt64Type;
-
                 TypedLlvmValue intValue;
-                intValue = builder.ConstInteger(intType, _int.LiteralValue);
+                intValue = builder.ConstInteger(_int.Type, _int.LiteralValue);
                 builder.SetValue(_int, intValue);
                 return intValue;
-            } break;
+            }
 
             // TODO(local): the integer constants should have types associated with them
             case LayeIr.IntToRawPtrCast _rawptrCast:
@@ -290,7 +287,7 @@ internal sealed class LlvmBackend : IBackend
                 var castValue = builder.BuildIntToRawPtrCast(toCastValue);
                 builder.SetValue(_rawptrCast, castValue);
                 return castValue;
-            } break;
+            }
 
             case LayeIr.InvokeGlobalFunction _invokeGlobal:
             {
@@ -298,7 +295,7 @@ internal sealed class LlvmBackend : IBackend
                 if (_invokeGlobal.GlobalFunction.Type!.ReturnType is not SymbolType.Void)
                     builder.SetValue(_invokeGlobal, callResult);
                 return callResult;
-            } break;
+            }
 
             default: throw new NotImplementedException();
         }
@@ -440,7 +437,7 @@ internal sealed class LlvmFunctionBuilder
 
     public LlvmValue<SymbolType.RawPtr> BuildIntToRawPtrCast(TypedLlvmValue value)
     {
-        var cast = BuildIntToPtr(Builder, value.Value, PointerType(VoidTypeInContext(Context), 0), "int.to.rawptr");
+        var cast = BuildIntToPtr(Builder, value.Value, PointerType(Int8TypeInContext(Context), 0), "int.to.rawptr");
         return new(cast, new());
     }
 }

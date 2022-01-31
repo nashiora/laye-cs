@@ -58,9 +58,17 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         return 1;
     }
 
-    var irModule = LayeChecker.CheckSyntax(sourceSyntaxes.Values.ToArray(), globalSymbols, diagnostics);
+    var cstRoots = LayeChecker.CheckSyntax(sourceSyntaxes.Values.ToArray(), globalSymbols, diagnostics);
 
-    if (diagnostics.Any(d => d is Diagnostic.Error))
+    if (cstRoots.Length != sourceSyntaxes.Count || diagnostics.Any(d => d is Diagnostic.Error))
+    {
+        PrintDiagnostics(diagnostics);
+        return 1;
+    }
+
+    var irModule = LayeIrGenerator.GenerateIr(cstRoots.ToArray(), diagnostics);
+
+    if (irModule is null || diagnostics.Any(d => d is Diagnostic.Error))
     {
         PrintDiagnostics(diagnostics);
         return 1;
@@ -78,6 +86,7 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
     {
         OutputFileName = args.OutputFileName,
         KeepTemporaryFiles = args.KeepTemporaryFiles,
+        ShowBackendOutput = args.ShowBackendOutput,
     };
 
     backend.Compile(new[] { irModule }, backendOptions);
@@ -148,6 +157,9 @@ sealed class ProgramArgs
 
     [CommandLine.Option("temp-files", Default = false, HelpText = "Keeps temporary files around after compilation.")]
     public bool KeepTemporaryFiles { get; set; } = false;
+
+    [CommandLine.Option("backend-output", Default = false, HelpText = "Shows output from backend processes.")]
+    public bool ShowBackendOutput { get; set; } = false;
 
     [CommandLine.Option("backend", Default = Backend.Llvm, HelpText = "The backend used to generate the output file.")]
     public Backend Backend { get; set; } = Backend.Llvm;

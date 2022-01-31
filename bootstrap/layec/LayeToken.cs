@@ -101,14 +101,15 @@ internal enum Keyword
 
     Int,
     UInt,
+    Bool,
     SizedInt,
     SizedUInt,
+    SizedBool,
 
     SizedFloat,
     Float,
 
     Void,
-    Bool,
     Rune,
 
     RawPtr,

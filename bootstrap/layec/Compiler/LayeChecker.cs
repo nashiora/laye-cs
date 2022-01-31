@@ -1,30 +1,30 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Diagnostics;
 
 namespace laye.Compiler;
 
 internal sealed class LayeChecker
 {
-    public static LayeIrModule CheckSyntax(LayeAstRoot[] syntax, SymbolTable symbols, List<Diagnostic> diagnostics)
+    public static LayeCstRoot[] CheckSyntax(LayeAstRoot[] syntax, SymbolTable symbols, List<Diagnostic> diagnostics)
     {
         var checker = new LayeChecker(syntax, symbols, diagnostics);
-        return checker.CreateModule();
+        return checker.CreateConcreteTrees();
     }
 
     private readonly LayeAstRoot[] m_syntax;
-    private readonly SymbolTable m_symbols;
+    private readonly SymbolTable m_globalSymbols;
 
     private readonly List<Diagnostic> m_diagnostics;
     private readonly int m_originalErrorCount;
 
+    private readonly Stack<SymbolTable> m_scopes = new();
+    private SymbolTable CurrentScope => m_scopes.TryPeek(out var scope) ? scope : m_globalSymbols;
+    private void PushScope(SymbolTable scope) => m_scopes.Push(scope);
+    private void PopScope() => m_scopes.Pop();
+
     private LayeChecker(LayeAstRoot[] syntax, SymbolTable symbols, List<Diagnostic> diagnostics)
     {
         m_syntax = syntax;
-        m_symbols = symbols;
+        m_globalSymbols = symbols;
         m_diagnostics = diagnostics;
 
         m_originalErrorCount = diagnostics.Count(d => d is Diagnostic.Error);
@@ -36,7 +36,7 @@ internal sealed class LayeChecker
         Debug.Assert(errorCount > 0, $"No error diagnostics generated when {context}");
     }
 
-    private LayeIrModule? CreateModule()
+    private LayeCstRoot[] CreateConcreteTrees()
     {
         var syms = new Dictionary<LayeAst, Symbol>();
 
@@ -53,17 +53,15 @@ internal sealed class LayeChecker
                         var sym = new Symbol.Function(fnDecl.Name.Image);
                         syms[fnDecl] = sym;
 
-                        if (!m_symbols.AddSymbol(sym))
+                        if (!m_globalSymbols.AddSymbol(sym))
                         {
                             m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, $"`{sym.Name}` is already define in this scope (function overloading is not supported)"));
-                            return null;
+                            return Array.Empty<LayeCstRoot>();
                         }
                     } break;
                 }
             }
         }
-
-        var irTypes = new List<Symbol>();
 
         // populate symbol data
         foreach (var astRoot in m_syntax)
@@ -81,7 +79,7 @@ internal sealed class LayeChecker
                         if (returnType is null)
                         {
                             AssertHasErrors("failing to resolve function return type in symbol creation");
-                            return null;
+                            return Array.Empty<LayeCstRoot>();
                         }
 
                         var paramInfos = new List<(SymbolType, string)>();
@@ -91,7 +89,7 @@ internal sealed class LayeChecker
                             if (paramType is null)
                             {
                                 AssertHasErrors("failing to resolve function parameter type in symbol creation");
-                                return null;
+                                return Array.Empty<LayeCstRoot>();
                             }
 
                             paramInfos.Add((paramType, paramAstType.Binding.BindingName.Image));
@@ -106,13 +104,13 @@ internal sealed class LayeChecker
             }
         }
 
-        var irFunctions = new List<LayeIr.Function>();
+        var cstRoots = new List<LayeCstRoot>();
 
         // compile functions to ir
         foreach (var astRoot in m_syntax)
         {
-            var topLevelNodes = astRoot.TopLevelNodes;
-            foreach (var node in topLevelNodes)
+            var topLevelNodes = new List<LayeCst>();
+            foreach (var node in astRoot.TopLevelNodes)
             {
                 switch (node)
                 {
@@ -124,16 +122,18 @@ internal sealed class LayeChecker
                         if (fn is null)
                         {
                             AssertHasErrors("failing to compile function");
-                            return null;
+                            return Array.Empty<LayeCstRoot>();
                         }
 
-                        irFunctions.Add(fn);
+                        topLevelNodes.Add(fn);
                     } break;
                 }
             }
+
+            cstRoots.Add(new LayeCstRoot(topLevelNodes.ToArray()));
         }
 
-        return new LayeIrModule(irFunctions.ToArray(), irTypes.ToArray());
+        return cstRoots.ToArray();
     }
 
     private SymbolType? ResolveType(LayeAst.Type astType)
@@ -148,7 +148,7 @@ internal sealed class LayeChecker
                     case Keyword.Void: return new SymbolType.Void();
 
                     case Keyword.Bool: return new SymbolType.Bool();
-                    //case Keyword.SizedBool: return new SymbolType.SizedBool(kw.SizeData);
+                    case Keyword.SizedBool: return new SymbolType.SizedBool(kw.SizeData);
 
                     case Keyword.Rune: return new SymbolType.Rune();
 
@@ -203,81 +203,102 @@ internal sealed class LayeChecker
         }
     }
 
-    private LayeIr.Function? CheckFunction(LayeAst.FunctionDeclaration fnDecl, Symbol.Function sym)
+    private LayeCst.FunctionDeclaration? CheckFunction(LayeAst.FunctionDeclaration fnDecl, Symbol.Function sym)
     {
-        var functionScope = new SymbolTable(m_symbols);
-        var functionBuilder = new LayeIrFunctionBuilder(fnDecl.Name, sym, functionScope);
+        var functionScope = new SymbolTable(CurrentScope) { FunctionSymbol = sym };
+        PushScope(functionScope);
 
+        LayeCst.FunctionBody functionBody;
         switch (fnDecl.Body)
         {
-            case LayeAst.EmptyFunctionBody: return functionBuilder.Build();
+            case LayeAst.EmptyFunctionBody: functionBody = new LayeCst.EmptyFunctionBody(); break;
 
             case LayeAst.BlockFunctionBody blockFunctionBody:
             {
-                var entryBlock = functionBuilder.AppendBasicBlock();
-                functionBuilder.PositionAtEnd(entryBlock);
-
-                foreach (var childNode in blockFunctionBody.BodyBlock.Body)
+                var block = CheckBlock(blockFunctionBody.BodyBlock);
+                if (block is null)
                 {
-                    if (!CheckStatement(functionBuilder, childNode))
-                    {
-                        AssertHasErrors("failing to check statement in function body block");
-                        return null;
-                    }
-                }
-            } break;
-        }
-
-        // TODO(local): validate before build (unterminated blocks will throw, so instead report errors before attempting to build)
-
-        if (sym.Type!.ReturnType is SymbolType.Void)
-        {
-            foreach (var block in functionBuilder.BasicBlocks)
-            {
-                if (block.TerminatorInstruction is null)
-                    block.TerminatorInstruction = new LayeIr.ReturnVoid(fnDecl.Name.SourceSpan);
-            }
-        }
-        else
-        {
-            foreach (var block in functionBuilder.BasicBlocks)
-            {
-                if (block.TerminatorInstruction is null)
-                {
-                    m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, "not all code paths return a value"));
+                    AssertHasErrors("failing to parse function body block");
                     return null;
                 }
-            }
+
+                functionBody = new LayeCst.BlockFunctionBody(block);
+            } break;
+
+            default: throw new NotImplementedException();
         }
 
-        return functionBuilder.Build();
+        PopScope();
+
+        var modifiers = fnDecl.Modifiers.Select<LayeAst.Modifier, LayeCst.Modifier>(m => m switch
+        {
+            LayeAst.Visibility vis => new LayeCst.Visibility(vis.VisibilityKeyword),
+            LayeAst.CallingConvention cc => new LayeCst.CallingConvention(cc.ConventionKeyword),
+            LayeAst.FunctionHint hint => new LayeCst.FunctionHint(hint.HintKeyword),
+            LayeAst.Accessibility acc => new LayeCst.Accessibility(acc.AccessKeyword),
+            _ => throw new NotImplementedException(),
+        });
+
+        return new LayeCst.FunctionDeclaration(modifiers.ToArray(), fnDecl.Name, sym, functionBody);
     }
 
-    private bool CheckStatement(LayeIrFunctionBuilder builder, LayeAst.Stmt statement)
+    private LayeCst.Stmt? CheckStatement(LayeAst.Stmt statement)
     {
         switch (statement)
         {
-            case LayeAst.ExpressionStatement exprStmt: return CheckExpression(builder, exprStmt.Expression) is not null;
+            case LayeAst.ExpressionStatement exprStmt:
+                var expr = CheckExpression(exprStmt.Expression);
+                if (expr is null)
+                {
+                    AssertHasErrors("failing to compile expression statement");
+                    return null;
+                }
+
+                return new LayeCst.ExpressionStatement(expr);
 
             default:
             {
                 m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "unrecognized statement type"));
-                return false;
+                return null;
             }
         }
     }
 
-    private LayeIr.Value? CheckExpression(LayeIrFunctionBuilder builder, LayeAst.Expr statement)
+    private LayeCst.Block? CheckBlock(LayeAst.Block block)
+    {
+        var blockScope = new SymbolTable(CurrentScope);
+        PushScope(blockScope);
+
+        var bodyNodes = new List<LayeCst.Stmt>();
+        foreach (var node in block.Body)
+        {
+            var cstNode = CheckStatement(node);
+            if (cstNode is null)
+            {
+                AssertHasErrors("failing to check block node");
+                return null;
+            }
+
+            bodyNodes.Add(cstNode);
+        }
+
+        PopScope();
+
+        return new LayeCst.Block(block.SourceSpan, bodyNodes.ToArray());
+    }
+
+    private LayeCst.Expr? CheckExpression(LayeAst.Expr statement)
     {
         switch (statement)
         {
             //case LayeAst.NameLookup nameLookupExpr: { }
 
-            case LayeAst.Integer intExpr: return builder.BuildInteger(intExpr.Literal.SourceSpan, intExpr.Literal.LiteralValue, new SymbolType.UntypedInteger());
-            case LayeAst.Float floatExpr: return builder.BuildFloat(floatExpr.Literal.SourceSpan, floatExpr.Literal.LiteralValue, new SymbolType.UntypedFloat());
-            case LayeAst.String stringExpr: return builder.BuildString(stringExpr.Literal.SourceSpan, stringExpr.Literal.LiteralValue, new SymbolType.UntypedString());
+            case LayeAst.Integer intExpr: return new LayeCst.Integer(intExpr.Literal, new SymbolType.UntypedInteger());
+            case LayeAst.Float floatExpr: return new LayeCst.Float(floatExpr.Literal, new SymbolType.UntypedFloat());
+            case LayeAst.Bool boolExpr: return new LayeCst.Bool(boolExpr.Literal, new SymbolType.UntypedBool());
+            case LayeAst.String stringExpr: return new LayeCst.String(stringExpr.Literal, new SymbolType.UntypedString());
 
-            case LayeAst.Invoke invokeExpr: return CheckInvoke(builder, invokeExpr);
+            case LayeAst.Invoke invokeExpr: return CheckInvoke(invokeExpr);
 
             default:
             {
@@ -287,12 +308,12 @@ internal sealed class LayeChecker
         }
     }
 
-    private LayeIr.Value? CheckInvoke(LayeIrFunctionBuilder builder, LayeAst.Invoke invoke)
+    private LayeCst.Expr? CheckInvoke(LayeAst.Invoke invoke)
     {
-        var argValues = new List<LayeIr.Value>();
+        var argValues = new List<LayeCst.Expr>();
         foreach (var arg in invoke.Arguments)
         {
-            var argValue = CheckExpression(builder, arg);
+            var argValue = CheckExpression(arg);
             if (argValue is null)
             {
                 AssertHasErrors("failing to check invocation argument");
@@ -304,8 +325,8 @@ internal sealed class LayeChecker
 
         if (invoke.TargetExpression is LayeAst.NameLookup targetNameLookup)
         {
-            string targetName = targetNameLookup.Image;
-            if (!m_symbols.TryGetSymbol(targetName, out var symbol))
+            string targetName = targetNameLookup.Name.Image;
+            if (CurrentScope.LookupSymbol(targetName) is not Symbol symbol)
             {
                 m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"failed to find function `{targetName}`"));
                 return null;
@@ -348,7 +369,7 @@ internal sealed class LayeChecker
                 var arg = argValues[i];
                 var param = targetParams[i];
 
-                if (CheckImplicitTypeCast(builder, arg, param.Type) is not LayeIr.Value argCast)
+                if (CheckImplicitTypeCast(arg, param.Type) is not LayeCst.Expr argCast)
                 {
                     AssertHasErrors("failing to convert argument to the correct type");
                     return null;
@@ -357,7 +378,7 @@ internal sealed class LayeChecker
                 argValues[i] = argCast;
             }
 
-            return builder.BuildInvokeGlobalFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());
+            return new LayeCst.InvokeFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());
         }
         else
         {
@@ -366,7 +387,7 @@ internal sealed class LayeChecker
         }
     }
 
-    private LayeIr.Value? CheckImplicitTypeCast(LayeIrFunctionBuilder builder, LayeIr.Value value, SymbolType targetType)
+    private LayeCst.Expr? CheckImplicitTypeCast(LayeCst.Expr value, SymbolType targetType)
     {
         if (value.Type == targetType)
             return value;
@@ -377,16 +398,21 @@ internal sealed class LayeChecker
             {
                 if (targetType is SymbolType.Integer _targetIntType)
                 {
-                    if (value is LayeIr.Integer _int)
-                        return builder.BuildExpression(new LayeIr.Integer(_int.SourceSpan, _int.LiteralValue, _targetIntType));
+                    if (value is LayeCst.Integer _int)
+                        return new LayeCst.Integer(_int.Literal, _targetIntType);
                 }
                 else if (targetType is SymbolType.SizedInteger _targetSizedIntType)
                 {
-                    if (value is LayeIr.Integer _int)
-                        return builder.BuildExpression(new LayeIr.Integer(_int.SourceSpan, _int.LiteralValue, _targetSizedIntType));
+                    if (value is LayeCst.Integer _int)
+                        return new LayeCst.Integer(_int.Literal, _targetSizedIntType);
                 }
                 else if (targetType is SymbolType.RawPtr)
-                    return builder.BuildIntToRawPtrCast(value);
+                {
+                    if (value is LayeCst.Integer _int && _int.Type is SymbolType.UntypedInteger)
+                        value = new LayeCst.Integer(_int.Literal, new SymbolType.Integer(false));
+
+                    return new LayeCst.TypeCast(value.SourceSpan, value, new SymbolType.RawPtr());
+                }
             } break;
 
             case SymbolType.UntypedString:
@@ -394,8 +420,8 @@ internal sealed class LayeChecker
                 //new SymbolType.Buffer(new SymbolType.SizedInteger(false, 8))
                 if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == new SymbolType.SizedInteger(false, 8))
                 {
-                    if (value is LayeIr.String _string)
-                        return builder.BuildExpression(new LayeIr.String(_string.SourceSpan, _string.LiteralValue, _targetBufferType));
+                    if (value is LayeCst.String _string)
+                        return new LayeCst.String(_string.Literal, _targetBufferType);
                 }
             } break;
         }

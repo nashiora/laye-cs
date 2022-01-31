@@ -29,7 +29,7 @@ internal sealed class BackendOptions
     public string TargetCpuString { get; set; } = "";
     public string TargetFeaturesString { get; set; } = "";
 
-    public bool ShowClangOutput { get; set; } = false;
+    public bool ShowBackendOutput { get; set; } = false;
 
     public string[] AdditionalArguments { get; set; } = Array.Empty<string>();
     public string[] FilesToLinkAgainst { get; set; } = Array.Empty<string>();

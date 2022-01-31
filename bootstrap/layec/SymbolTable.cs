@@ -6,6 +6,13 @@ internal sealed class SymbolTable
 
     public SymbolTable? Parent { get; }
 
+    private Symbol.Function? m_functionSymbol;
+    public Symbol.Function? FunctionSymbol
+    {
+        get => m_functionSymbol ?? Parent?.FunctionSymbol;
+        set => m_functionSymbol = value;
+    }
+
     public SymbolTable(SymbolTable? parent = null)
     {
         Parent = parent;
@@ -21,6 +28,20 @@ internal sealed class SymbolTable
     }
 
     public bool TryGetSymbol(string symbolName, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out Symbol symbol) => m_symbols.TryGetValue(symbolName, out symbol);
+
+    public Symbol? LookupSymbol(string symbolName)
+    {
+        SymbolTable? table = this;
+        while (table is not null)
+        {
+            if (table.TryGetSymbol(symbolName, out var symbol))
+                return symbol;
+
+            table = table.Parent;
+        }
+
+        return null;
+    }
 }
 
 internal abstract record class Symbol
@@ -109,6 +130,7 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Void() : SymbolType("void");
     public sealed record class Rune() : SymbolType("rune");
 
+    public sealed record class UntypedBool() : SymbolType("untyped bool");
     public sealed record class Bool() : SymbolType("bool");
     public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 

@@ -35,7 +35,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class Visibility(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
     public sealed record class CallingConvention(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
-    public sealed record class FunctionHint(LayeToken.Keyword AccessKeyword) : Modifier(AccessKeyword.SourceSpan);
+    public sealed record class FunctionHint(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
     public sealed record class Accessibility(LayeToken.Keyword AccessKeyword) : Modifier(AccessKeyword.SourceSpan);
 
     #endregion
@@ -146,33 +146,17 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Expr(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
-    public sealed record class Integer(LayeToken.Integer Literal) : Expr(Literal.SourceSpan)
-    {
-        public ulong LiteralValue => Literal.LiteralValue;
-    }
+    public sealed record class Integer(LayeToken.Integer Literal) : Expr(Literal.SourceSpan);
+    public sealed record class Float(LayeToken.Float Literal) : Expr(Literal.SourceSpan);
+    public sealed record class Bool(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
+    public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan);
 
-    public sealed record class Float(LayeToken.Float Literal) : Expr(Literal.SourceSpan)
-    {
-        public double LiteralValue => Literal.LiteralValue;
-    }
-
-    public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan)
-    {
-        public string LiteralValue => Literal.LiteralValue;
-    }
-
-    public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan)
-    {
-        public string Image => Name.Image;
-    }
+    public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan);
 
     public sealed record class PathLookup(PathPart Path) : Expr(Path.SourceSpan);
 
     public sealed record class GroupedExpression(LayeToken.Delimiter OpenGroup, Expr Expression, LayeToken.Delimiter CloseGroup)
         : Expr(new SourceSpan(OpenGroup.SourceSpan.StartLocation, CloseGroup.SourceSpan.EndLocation));
-
-    public sealed record class Block(LayeToken.Delimiter Start, LayeToken.Delimiter End, Stmt[] Body)
-        : Expr(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));
 
     public sealed record class Invoke(Expr TargetExpression, LayeToken.Delimiter OpenArgs, Expr[] Arguments, LayeToken.Delimiter[] ArgumentDelimiters, LayeToken.Delimiter CloseArgs)
         : Expr(new SourceSpan(TargetExpression.SourceSpan.StartLocation, CloseArgs.SourceSpan.EndLocation));
@@ -189,6 +173,9 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public abstract record class Stmt(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
     public sealed record class ExpressionStatement(Expr Expression, LayeToken.Delimiter Terminator) : Stmt(Expression.SourceSpan);
+
+    public sealed record class Block(LayeToken.Delimiter Start, LayeToken.Delimiter End, Stmt[] Body)
+        : Stmt(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));
 
     public sealed record class FileNamespaceDeclaration(LayeToken.Keyword NamespaceKeyword, NamePathPart[] NameParts, LayeToken.Delimiter NameDelimiters, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(NamespaceKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));

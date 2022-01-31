@@ -51,20 +51,11 @@ internal sealed class LayeIrFunctionBuilder
 
     public IEnumerable<LayeIrBasicBlockBuilder> BasicBlocks => m_basicBlocks;
 
-    public SymbolTable FunctionScope { get; }
-
-    private readonly Stack<SymbolTable> m_lexicalScopes = new();
-    public SymbolTable CurrentScope => m_lexicalScopes.TryPeek(out var result) ? result : FunctionScope;
-
-    public LayeIrFunctionBuilder(LayeIr.Identifier name, Symbol.Function symbol, SymbolTable functionScope)
+    public LayeIrFunctionBuilder(LayeIr.Identifier name, Symbol.Function symbol)
     {
         m_name = name;
         m_symbol = symbol;
-        FunctionScope = functionScope;
     }
-
-    public void PushScope() => m_lexicalScopes.Push(new(CurrentScope));
-    public void PopScope() => m_lexicalScopes.Pop();
 
     public LayeIrBasicBlockBuilder AppendBasicBlock()
     {

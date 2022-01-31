@@ -2,6 +2,13 @@
 
 public readonly struct SourceSpan : IEquatable<SourceSpan>, IComparable<SourceSpan>
 {
+    public static SourceSpan Combine(params IHasSourceSpan?[] values)
+    {
+        var spans = values.Where(s => s is not null).Cast<IHasSourceSpan>();
+        if (!spans.Any()) throw new ArgumentException("no non-null source spans", nameof(values));
+        return new SourceSpan(spans.Select(s => s.SourceSpan.StartLocation).Min()!, spans.Select(s => s.SourceSpan.EndLocation).Max()!);
+    }
+
     public static bool operator ==(SourceSpan left, SourceSpan right) =>  left.Equals(right);
     public static bool operator !=(SourceSpan left, SourceSpan right) => !left.Equals(right);
 
