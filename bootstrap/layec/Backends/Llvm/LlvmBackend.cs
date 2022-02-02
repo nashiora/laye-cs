@@ -301,9 +301,36 @@ internal sealed class LlvmBackend : IBackend
                 var targetValue = CompileExpression(builder, typeCast.Expression);
                 switch (typeCast.Type)
                 {
-                    case SymbolType.RawPtr: return builder.BuildIntToRawPtrCast(targetValue);
-                    default: throw new NotImplementedException();
+                    case SymbolType.RawPtr:
+                    {
+                        if (targetValue.Type is SymbolType.Integer || targetValue.Type is SymbolType.SizedInteger)
+                            return builder.BuildIntToRawPtrCast(targetValue);
+                    } break;
+
+                    case SymbolType.Pointer pointerType:
+                    {
+                        if (targetValue.Type is SymbolType.Integer || targetValue.Type is SymbolType.SizedInteger)
+                            return builder.BuildIntToPointerCast(targetValue, pointerType);
+                        else if (targetValue.Type is SymbolType.Pointer valuePointerType)
+                        {
+                            if (valuePointerType.ElementType == pointerType.ElementType)
+                                return new LlvmValue<SymbolType.Pointer>(targetValue.Value, pointerType);
+                        }
+                    } break;
+
+                    case SymbolType.Buffer bufferType:
+                    {
+                        if (targetValue.Type is SymbolType.Integer || targetValue.Type is SymbolType.SizedInteger)
+                            return builder.BuildIntToBufferCast(targetValue, bufferType);
+                        else if (targetValue.Type is SymbolType.Buffer valueBufferType)
+                        {
+                            if (valueBufferType.ElementType == bufferType.ElementType)
+                                return new LlvmValue<SymbolType.Buffer>(targetValue.Value, bufferType);
+                        }
+                    } break;
                 }
+
+                throw new NotImplementedException();
             }
 
             case LayeCst.InvokeFunction invokeFunction:
@@ -456,6 +483,18 @@ internal sealed class LlvmFunctionBuilder
             return new LlvmValueVoid();
 
         return new TypedLlvmValue(functionResult, functionSymbol.Type!.ReturnType);
+    }
+
+    public LlvmValue<SymbolType.Pointer> BuildIntToPointerCast(TypedLlvmValue value, SymbolType.Pointer pointerType)
+    {
+        var cast = BuildIntToPtr(Builder, value.Value, Backend.GetLlvmType(pointerType), "int.to.pointer");
+        return new(cast, pointerType);
+    }
+
+    public LlvmValue<SymbolType.Buffer> BuildIntToBufferCast(TypedLlvmValue value, SymbolType.Buffer bufferType)
+    {
+        var cast = BuildIntToPtr(Builder, value.Value, Backend.GetLlvmType(bufferType), "int.to.buffer");
+        return new(cast, bufferType);
     }
 
     public LlvmValue<SymbolType.RawPtr> BuildIntToRawPtrCast(TypedLlvmValue value)

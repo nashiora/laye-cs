@@ -196,7 +196,14 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                return new SymbolType.Pointer(elementType);
+                var modifiers = pointerType.Modifiers;
+                if (!CheckContainerModifiers(modifiers, out bool isReadOnly))
+                {
+                    AssertHasErrors("checking container modifiers");
+                    return null;
+                }
+
+                return new SymbolType.Pointer(elementType, isReadOnly);
             }
 
             case LayeAst.BufferType bufferType:
@@ -208,7 +215,14 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                return new SymbolType.Buffer(elementType);
+                var modifiers = bufferType.Modifiers;
+                if (!CheckContainerModifiers(modifiers, out bool isReadOnly))
+                {
+                    AssertHasErrors("checking container modifiers");
+                    return null;
+                }
+
+                return new SymbolType.Buffer(elementType, isReadOnly);
             }
 
             default:
@@ -216,6 +230,43 @@ internal sealed class LayeChecker
                 m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unrecognized type)"));
                 return null;
             }
+        }
+
+        bool CheckContainerModifiers(LayeAst.Modifier[] modifiers, out bool isReadOnly)
+        {
+            isReadOnly = false;
+
+            var supportedModifiers = modifiers.Where(m => m is LayeAst.Accessibility);
+            var unsupportedModifiers = modifiers.Where(m => !supportedModifiers.Contains(m));
+
+            if (unsupportedModifiers.Any())
+            {
+                foreach (var unmod in unsupportedModifiers)
+                    m_diagnostics.Add(new Diagnostic.Error(unmod.SourceSpan, "unsupported modifier word for container type"));
+
+                return false;
+            }
+
+            var accessibilityModifiers = supportedModifiers.Where(m => m is LayeAst.Accessibility).Cast<LayeAst.Accessibility>();
+            if (accessibilityModifiers.Count() > 1)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "duplicate accessibility modifiers on container type"));
+                return false;
+            }
+
+            var accessModifier = accessibilityModifiers.SingleOrDefault();
+            if (accessModifier is not null)
+            {
+                if (accessModifier.AccessKeyword.Kind == Keyword.ReadOnly)
+                    isReadOnly = true;
+                else
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "unrecognized accessibility modifier on container type"));
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 
@@ -550,11 +601,28 @@ internal sealed class LayeChecker
 
             case SymbolType.UntypedString:
             {
-                //new SymbolType.Buffer(new SymbolType.SizedInteger(false, 8))
-                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == new SymbolType.SizedInteger(false, 8))
+                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == new SymbolType.SizedInteger(false, 8) && _targetBufferType.ReadOnly)
                 {
                     if (value is LayeCst.String _string)
                         return new LayeCst.String(_string.Literal, _targetBufferType);
+                }
+            } break;
+
+            case SymbolType.Pointer pointerType:
+            {
+                if (targetType is SymbolType.Pointer _targetPointerType && _targetPointerType.ElementType == pointerType.ElementType)
+                {
+                    if (_targetPointerType.ReadOnly)
+                        return new LayeCst.TypeCast(value.SourceSpan, value, pointerType);
+                }
+            } break;
+
+            case SymbolType.Buffer bufferType:
+            {
+                if (targetType is SymbolType.Pointer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
+                {
+                    if (_targetBufferType.ReadOnly)
+                        return new LayeCst.TypeCast(value.SourceSpan, value, bufferType);
                 }
             } break;
         }
