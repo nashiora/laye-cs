@@ -23,27 +23,39 @@ internal sealed class LlvmBackend : IBackend
 
     private readonly Dictionary<Symbol.Function, LLVMValueRef> m_functions = new();
 
-    public void Compile(LayeIrModule[] modules, BackendOptions options)
+    private readonly HashSet<string> m_externLibraryReferences = new();
+
+    public void Compile(LayeCstRoot[] roots, BackendOptions options)
     {
         string lmoduleName = Path.GetFileNameWithoutExtension(options.OutputFileName);
 
         Context = ContextCreate();
         Module = ModuleCreateWithNameInContext(lmoduleName, Context);
 
-        foreach (var module in modules)
+        foreach (var root in roots)
         {
-            foreach (var function in module.Functions)
+            foreach (var node in root.TopLevelNodes)
             {
-                m_functions[function.Symbol] = DeclareFunction(function);
+                switch (node)
+                {
+                    case LayeCst.FunctionDeclaration function:
+                        m_functions[function.FunctionSymbol] = DeclareFunction(function);
+                        break;
+                }
             }
         }
 
-        foreach (var module in modules)
+        foreach (var root in roots)
         {
-            foreach (var function in module.Functions)
+            foreach (var node in root.TopLevelNodes)
             {
-                if (function.BasicBlocks.Length > 0)
-                    CompileFunction(function);
+                switch (node)
+                {
+                    case LayeCst.FunctionDeclaration function:
+                        if (function.Body is not LayeCst.EmptyFunctionBody)
+                            CompileFunction(function);
+                        break;
+                }
             }
         }
 
@@ -72,8 +84,10 @@ internal sealed class LlvmBackend : IBackend
         string outFileName = options.OutputFileName;
         //outFileName = Path.ChangeExtension(outFileName, ".o");
 
+        IEnumerable<string> filesToLinkAgainst = options.FilesToLinkAgainst.Concat(m_externLibraryReferences.Select(ex => $"-l{ex}"));
+
         // i686-pc-windows-gnu
-        string additionalFiles = string.Join(" ", options.FilesToLinkAgainst.Select(f => $"\"{f}\""));
+        string additionalFiles = string.Join(" ", filesToLinkAgainst.Select(f => $"\"{f}\""));
         string clangArguments = $"-target {options.TargetTriple} \"{bcFileName}\" {additionalFiles} -g -v \"-o{outFileName}\"";
         if (options.IsExecutable)
             ;// clangArguments += " -Wl,-ENTRY:_laye_start";
@@ -189,12 +203,15 @@ internal sealed class LlvmBackend : IBackend
         }
     }
 
-    private LLVMValueRef DeclareFunction(LayeIr.Function function)
+    private LLVMValueRef DeclareFunction(LayeCst.FunctionDeclaration function)
     {
-        var llvmFunctionType = GetLlvmType(function.Symbol.Type!);
-        var llvmFunctionValue = AddFunction(Module, function.Name.Image, llvmFunctionType);
-        
-        SetFunctionCallConv(llvmFunctionValue, (uint)(function.Symbol.Type!.CallingConvention switch
+        var llvmFunctionType = GetLlvmType(function.FunctionSymbol.Type!);
+        var llvmFunctionValue = AddFunction(Module, function.FunctionSymbol.Name, llvmFunctionType);
+
+        if (function.Modifiers.ExternModifier is not null && function.Modifiers.ExternModifier.LibraryName.LiteralValue != "C")
+            m_externLibraryReferences.Add(function.Modifiers.ExternModifier.LibraryName.LiteralValue);
+
+        SetFunctionCallConv(llvmFunctionValue, (uint)(function.FunctionSymbol.Type!.CallingConvention switch
         {
             CallingConvention.Laye => LLVMCallConv.LLVMCCallConv,
             CallingConvention.LayeNoContext => LLVMCallConv.LLVMCCallConv,
@@ -209,92 +226,87 @@ internal sealed class LlvmBackend : IBackend
         return llvmFunctionValue;
     }
 
-    private void CompileFunction(LayeIr.Function function)
+    private void CompileFunction(LayeCst.FunctionDeclaration function)
     {
-        var functionValue = m_functions[function.Symbol];
+        var functionValue = m_functions[function.FunctionSymbol];
         var builder = new LlvmFunctionBuilder(this, functionValue, CreateBuilderInContext(Context));
 
         var entryBlock = builder.AppendBlock(".entry");
+        builder.PositionAtEnd(entryBlock);
 
-        var blockValues = new LLVMBasicBlockRef[function.BasicBlocks.Length];
-        for (int i = 0; i < blockValues.Length; i++)
+        switch (function.Body)
         {
-            var llvmBlock = builder.AppendBlock();
-            blockValues[i] = llvmBlock;
+            case LayeCst.BlockFunctionBody block: CompileBlock(builder, block.BodyBlock); break;
+
+            default: throw new NotImplementedException();
         }
 
-        builder.PositionAtEnd(entryBlock);
-        builder.BuildBranch(blockValues[0]);
+        builder.BuildReturnVoid();
+    }
 
-        for (int i = 0; i < blockValues.Length; i++)
+    private void CompileBlock(LlvmFunctionBuilder builder, LayeCst.Block block)
+    {
+        foreach (var statement in block.Body)
+            CompileStatement(builder, statement);
+    }
+
+    private void CompileStatement(LlvmFunctionBuilder builder, LayeCst.Stmt statement)
+    {
+        switch (statement)
         {
-            var layeBlock = function.BasicBlocks[i];
-            var llvmBlock = blockValues[i];
-
-            builder.PositionAtEnd(llvmBlock);
-
-            foreach (var insn in layeBlock.Instructions)
+            case LayeCst.BindingDeclaration bindingDecl:
             {
-                switch (insn)
+                var bindingAddress = builder.BuildAlloca(bindingDecl.BindingSymbol.Type!, bindingDecl.BindingName.Image);
+                builder.SetSymbolAddress(bindingDecl.BindingSymbol, bindingAddress);
+
+                if (bindingDecl.Expression is LayeCst.Expr expression)
                 {
-                    case LayeIr.InvokeGlobalFunction _invokeGlobal:
-                    {
-                        var callResult = builder.BuildCall(_invokeGlobal.GlobalFunction, _invokeGlobal.Arguments);
-                        if (_invokeGlobal.GlobalFunction.Type!.ReturnType is not SymbolType.Void)
-                            builder.SetValue(_invokeGlobal, callResult);
-                    } break;
+                    var expressionValue = CompileExpression(builder, expression);
+                    builder.BuildStore(expressionValue, bindingAddress);
+                }
+            } break;
 
-                    case LayeIr.Value value: CompileValue(builder, value); break;
+            case LayeCst.ExpressionStatement exprStmt: CompileExpression(builder, exprStmt.Expression); break;
 
+            default: throw new NotImplementedException();
+        }
+    }
+
+    private TypedLlvmValue CompileExpression(LlvmFunctionBuilder builder, LayeCst.Expr expression)
+    {
+        switch (expression)
+        {
+            case LayeCst.String _string:
+            {
+                TypedLlvmValue stringValue;
+                stringValue = builder.BuildGlobalStringPointer(_string.Literal.LiteralValue);
+                return stringValue;
+            }
+
+            case LayeCst.Integer _int:
+            {
+                TypedLlvmValue intValue;
+                intValue = builder.ConstInteger(_int.Type, _int.Literal.LiteralValue);
+                return intValue;
+            }
+
+            case LayeCst.TypeCast typeCast:
+            {
+                var targetValue = CompileExpression(builder, typeCast.Expression);
+                switch (typeCast.Type)
+                {
+                    case SymbolType.RawPtr: return builder.BuildIntToRawPtrCast(targetValue);
                     default: throw new NotImplementedException();
                 }
             }
 
-            switch (layeBlock.BranchInstruction)
+            case LayeCst.InvokeFunction invokeFunction:
             {
-                case LayeIr.Return _return: builder.BuildReturn(_return.ReturnValue); break;
-                case LayeIr.ReturnVoid: builder.BuildReturnVoid(); break;
-                default: throw new NotImplementedException();
-            }
-        }
-    }
+                var args = new TypedLlvmValue[invokeFunction.Arguments.Length];
+                for (int i = 0; i < args.Length; i++)
+                    args[i] = CompileExpression(builder, invokeFunction.Arguments[i]);
 
-    private TypedLlvmValue CompileValue(LlvmFunctionBuilder builder, LayeIr.Value value)
-    {
-        switch (value)
-        {
-            case LayeIr.String _string:
-            {
-                TypedLlvmValue stringValue;
-                stringValue = builder.BuildGlobalStringPointer(_string.LiteralValue);
-                builder.SetValue(_string, stringValue);
-                return stringValue;
-            }
-
-            // TODO(local): the integer constants should have types associated with them
-            case LayeIr.Integer _int:
-            {
-                TypedLlvmValue intValue;
-                intValue = builder.ConstInteger(_int.Type, _int.LiteralValue);
-                builder.SetValue(_int, intValue);
-                return intValue;
-            }
-
-            // TODO(local): the integer constants should have types associated with them
-            case LayeIr.IntToRawPtrCast _rawptrCast:
-            {
-                var toCastValue = CompileValue(builder, _rawptrCast.CastValue);
-                var castValue = builder.BuildIntToRawPtrCast(toCastValue);
-                builder.SetValue(_rawptrCast, castValue);
-                return castValue;
-            }
-
-            case LayeIr.InvokeGlobalFunction _invokeGlobal:
-            {
-                var callResult = builder.BuildCall(_invokeGlobal.GlobalFunction, _invokeGlobal.Arguments);
-                if (_invokeGlobal.GlobalFunction.Type!.ReturnType is not SymbolType.Void)
-                    builder.SetValue(_invokeGlobal, callResult);
-                return callResult;
+                return builder.BuildCall(invokeFunction.TargetFunctionSymbol, args);
             }
 
             default: throw new NotImplementedException();
@@ -313,7 +325,7 @@ internal sealed class LlvmFunctionBuilder
     private readonly List<LLVMBasicBlockRef> m_blocks = new();
     private int m_currentBlockIndex = -1;
 
-    private readonly Dictionary<LayeIr.Value, TypedLlvmValue> m_values = new();
+    private readonly Dictionary<Symbol, LlvmValue<SymbolType.Pointer>> m_valueAddresses = new();
 
     public LlvmFunctionBuilder(LlvmBackend backend, LLVMValueRef functionValue, LLVMBuilderRef builder)
     {
@@ -342,7 +354,8 @@ internal sealed class LlvmFunctionBuilder
         m_currentBlockIndex = m_blocks.IndexOf(block);
     }
 
-    public void SetValue(LayeIr.Value irValue, TypedLlvmValue llvmValue) => m_values[irValue] = llvmValue;
+    public void SetSymbolAddress(Symbol symbol, LlvmValue<SymbolType.Pointer> llvmValue) => m_valueAddresses[symbol] = llvmValue;
+    public LlvmValue<SymbolType.Pointer> GetSymbolAddress(Symbol symbol) => m_valueAddresses[symbol];
 
     public LlvmValue<TIntType> ConstInteger<TIntType>(TIntType intType, ulong constantValue)
         where TIntType : SymbolType
@@ -405,6 +418,12 @@ internal sealed class LlvmFunctionBuilder
         return new(allocaAddressResult, new SymbolType.Pointer(type));
     }
 
+    public void BuildStore(TypedLlvmValue value, LlvmValue<SymbolType.Pointer> address)
+    {
+        Debug.Assert(value.Type == address.Type.ElementType, "type checker did not ensure value and address types were the same");
+        LLVM.BuildStore(Builder, value.Value, address.Value);
+    }
+
     public void BuildBranch(LLVMBasicBlockRef block)
     {
         CheckCanBuild();
@@ -413,21 +432,13 @@ internal sealed class LlvmFunctionBuilder
         BuildBr(Builder, block);
     }
 
-    public void BuildReturn(LayeIr.Value value)
-    {
-        Debug.Assert(m_values.ContainsKey(value), "cannot return a value which has not been created yet");
-        BuildRet(Builder, m_values[value].Value);
-    }
+    public void BuildReturn(TypedLlvmValue value) => BuildRet(Builder, value.Value);
+    public void BuildReturnVoid() => BuildRetVoid(Builder);
 
-    public void BuildReturnVoid()
-    {
-        BuildRetVoid(Builder);
-    }
-
-    public TypedLlvmValue BuildCall(Symbol.Function functionSymbol, LayeIr.Value[] arguments)
+    public TypedLlvmValue BuildCall(Symbol.Function functionSymbol, TypedLlvmValue[] arguments)
     {
         var functionValue = Backend.GetFunctionValueFromSymbol(functionSymbol);
-        var functionResult = LLVM.BuildCall(Builder, functionValue, arguments.Select(a => m_values[a].Value).ToArray(), "");
+        var functionResult = LLVM.BuildCall(Builder, functionValue, arguments.Select(a => a.Value).ToArray(), "");
 
         if (functionSymbol.Type!.ReturnType is SymbolType.Void)
             return new LlvmValueVoid();

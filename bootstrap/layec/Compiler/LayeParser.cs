@@ -92,6 +92,7 @@ internal sealed class LayeParser
     private bool CheckIdentifier(out LayeToken.Identifier identifier) => Check(out identifier);
     private bool CheckDelimiter(Delimiter kind, out LayeToken.Delimiter delimiter) => Check(out delimiter) && delimiter.Kind == kind;
     private bool CheckOperator(Operator kind, out LayeToken.Operator @operator) => Check(out @operator) && @operator.Kind == kind;
+    private bool CheckOperator(out LayeToken.Operator @operator, Predicate<LayeToken.Operator> predicate) => Check(out @operator) && predicate(@operator);
     private bool CheckKeyword(Keyword kind, out LayeToken.Keyword keyword) => Check(out keyword) && keyword.Kind == kind;
 
     private bool Expect<TToken>()
@@ -127,16 +128,34 @@ internal sealed class LayeParser
 
     #region Modifiers
 
-    private LayeAst.Modifier[] ReadModifierList()
+    private bool ReadModifierList(out LayeAst.Modifier[] modifiers)
     {
+        modifiers = Array.Empty<LayeAst.Modifier>();
+
         var result = new List<LayeAst.Modifier>();
         while (!IsEoF && Check<LayeToken.Keyword>(out var keyword) && keyword.IsModifier())
         {
-            result.Add(keyword.ToModifierNode());
-            Advance(); // modifier keyword
+            if (CheckKeyword(Keyword.Extern, out var externKw))
+            {
+                Advance(); // `extern`
+
+                if (!Expect<LayeToken.String>(out var externString))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected string as extern library name"));
+                    return false;
+                }
+
+                result.Add(new LayeAst.ExternModifier(externKw, externString));
+            }
+            else
+            {
+                result.Add(keyword.ToModifierNode());
+                Advance(); // modifier keyword
+            }
         }
 
-        return result.ToArray();
+        modifiers = result.ToArray();
+        return true;
     }
 
     #endregion
@@ -147,9 +166,7 @@ internal sealed class LayeParser
     {
         int tokenIndex = m_tokenIndex;
 
-        //var typeModifiers = GetModifierList();
         LayeAst.Type? type = null;
-
         if (CheckKeyword(Keyword.SizedInt, out var sizedIntKw))
         {
             type = new LayeAst.BuiltInType(sizedIntKw);
@@ -239,7 +256,12 @@ internal sealed class LayeParser
 
         while (!IsEoF)
         {
-            var containerModifiers = ReadModifierList();
+            if (!ReadModifierList(out var containerModifiers))
+            {
+                AssertHasError("failing to parse type modifiers");
+                return null;
+            }
+
             if (CheckOperator(Operator.Multiply, out var starOp))
             {
                 Advance(); // `*`
@@ -286,8 +308,14 @@ internal sealed class LayeParser
         //return null;
     }
     
-    private LayeAst? ReadFunctionDeclaration()
+    private LayeAst.FunctionDeclaration? ReadFunctionDeclaration()
     {
+        if (!ReadModifierList(out var modifiers))
+        {
+            AssertHasError("failing to read function decl modifiers");
+            return null;
+        }
+
         var returnType = TryReadTypeNode();
         if (returnType is null)
         {
@@ -295,17 +323,17 @@ internal sealed class LayeParser
             return null;
         }
 
-        return ReadFunctionDeclaration(Array.Empty<LayeAst.Modifier>(), returnType);
-    }
-
-    private LayeAst? ReadFunctionDeclaration(LayeAst.Modifier[] modifiers, LayeAst.Type returnType)
-    {
         if (!ExpectIdentifier(out var functionName))
         {
             m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as function name"));
             return null;
         }
 
+        return ReadFunctionDeclaration(modifiers, returnType, functionName);
+    }
+
+    private LayeAst.FunctionDeclaration? ReadFunctionDeclaration(LayeAst.Modifier[] modifiers, LayeAst.Type returnType, LayeToken.Identifier functionName)
+    {
         if (!ExpectDelimiter(Delimiter.OpenParen, out var openParams))
         {
             m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` as start of function parameter list"));
@@ -419,20 +447,57 @@ internal sealed class LayeParser
 
     private LayeAst.Stmt? ReadStatement()
     {
-        var expression = ReadExpression();
-        if (expression is null)
+        int startPosition = m_tokenIndex;
+        if (TryReadTypeNode(false) is LayeAst.Type bindingType && CheckIdentifier(out var bindingIdent))
         {
-            AssertHasError("failing to read expression as statement");
-            return null;
-        }
+            Advance(); // ident
+            if (CheckDelimiter(Delimiter.OpenParen, out var _))
+                return ReadFunctionDeclaration(Array.Empty<LayeAst.Modifier>(), bindingType, bindingIdent);
 
-        if (!ExpectDelimiter(Delimiter.SemiColon, out var semi))
+            LayeToken.Operator? opEqToken = null;
+            LayeAst.Expr? assignedValue = null;
+
+            if (CheckOperator(Operator.Assign, out var opEq))
+            {
+                opEqToken = opEq;
+                Advance(); // `=`
+
+                if (ReadExpression() is not LayeAst.Expr expr)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected expression in binding assignment"));
+                    return null;
+                }
+
+                assignedValue = expr;
+            }
+
+            if (!ExpectDelimiter(Delimiter.SemiColon, out var semi))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate binding declaration"));
+                return null;
+            }
+
+            return new LayeAst.BindingDeclaration(bindingType, bindingIdent, opEqToken, assignedValue, semi);
+        }
+        else
         {
-            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate expression statement"));
-            return null;
-        }
+            m_tokenIndex = startPosition;
 
-        return new LayeAst.ExpressionStatement(expression, semi);
+            var expression = ReadExpression();
+            if (expression is null)
+            {
+                AssertHasError("failing to read expression as statement");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.SemiColon, out var semi))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate expression statement"));
+                return null;
+            }
+
+            return new LayeAst.ExpressionStatement(expression, semi);
+        }
     }
 
     private LayeAst.Expr? ReadExpression()
@@ -482,6 +547,33 @@ internal sealed class LayeParser
         {
             Advance(); // string
             result = new LayeAst.String(stringLit);
+        }
+        else if (CheckOperator(out var prefixOp, op => op.Kind != Operator.Assign))
+        {
+            Advance(); // operator
+
+            var subexpr = ReadPrimaryExpression();
+            if (subexpr is null)
+            {
+                AssertHasError("failing to parse primary expression after prefix operator");
+                return null;
+            }
+
+            if (prefixOp.Kind == Operator.Subtract)
+            {
+                if (subexpr is LayeAst.Integer subint)
+                    return new LayeAst.Integer(new LayeToken.Integer(SourceSpan.Combine(prefixOp.SourceSpan, subint.SourceSpan), (ulong)-(long)subint.Literal.LiteralValue), !subint.Signed);
+                else if (subexpr is LayeAst.Float subfloat)
+                    return new LayeAst.Float(new LayeToken.Float(SourceSpan.Combine(prefixOp.SourceSpan, subfloat.SourceSpan), -subfloat.Literal.LiteralValue));
+            }
+            else if (prefixOp.Kind == Operator.Add)
+            {
+                if (subexpr is LayeAst.Integer subint)
+                    return new LayeAst.Integer(new LayeToken.Integer(SourceSpan.Combine(prefixOp.SourceSpan, subint.SourceSpan), subint.Literal.LiteralValue));
+                else if (subexpr is LayeAst.Float subfloat)
+                    return new LayeAst.Float(new LayeToken.Float(SourceSpan.Combine(prefixOp.SourceSpan, subfloat.SourceSpan), subfloat.Literal.LiteralValue));
+            }
+            else throw new NotImplementedException();
         }
         else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));
 

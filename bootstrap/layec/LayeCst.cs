@@ -16,6 +16,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Modifier(SourceSpan SourceSpan) : LayeCst(SourceSpan);
 
+    public sealed record class ExternModifier(LayeToken.Keyword ExternKeyword, LayeToken.String LibraryName) : Modifier(SourceSpan.Combine(ExternKeyword, LibraryName));
     public sealed record class Visibility(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
     public sealed record class CallingConvention(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
     public sealed record class FunctionHint(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
@@ -48,12 +49,22 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
 
+    public sealed record class BindingDeclaration(Modifier[] Modifiers, LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
+        : Stmt(SourceSpan.Combine(new IHasSourceSpan?[] { BindingName, Expression }));
+
     public abstract record class FunctionBody;
     public sealed record class EmptyFunctionBody : FunctionBody;
     public sealed record class BlockFunctionBody(Block BodyBlock) : FunctionBody;
     public sealed record class ExpressionFunctionBody(Expr BodyExpression) : FunctionBody;
 
-    public sealed record class FunctionDeclaration(Modifier[] Modifiers, LayeToken.Identifier FunctionName, Symbol.Function FunctionSymbol, FunctionBody Body) : Stmt(FunctionName.SourceSpan);
+    public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, LayeToken.Identifier FunctionName, Symbol.Function FunctionSymbol, FunctionBody Body)
+        : Stmt(FunctionName.SourceSpan);
 
     #endregion
+}
+
+internal sealed record class FunctionModifiers
+{
+    public LayeCst.ExternModifier? ExternModifier { get; set; }
+    public LayeCst.CallingConvention? CallingConvention { get; set; }
 }

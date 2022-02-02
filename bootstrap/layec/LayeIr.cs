@@ -13,7 +13,7 @@ internal abstract record class LayeIr(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Decl(SourceSpan SourceSpan) : LayeIr(SourceSpan);
 
-    public sealed record class Function(Identifier Name, Symbol.Function Symbol, BasicBlock[] BasicBlocks) : Decl(Name.SourceSpan);
+    public sealed record class Function(Identifier Name, Symbol.Function Symbol, BasicBlock[] BasicBlocks, string? ExternLibrary) : Decl(Name.SourceSpan);
 
     #endregion
 
@@ -51,6 +51,8 @@ internal sealed class LayeIrFunctionBuilder
 
     public IEnumerable<LayeIrBasicBlockBuilder> BasicBlocks => m_basicBlocks;
 
+    public string? ExternLibrary { get; set; } = null;
+
     public LayeIrFunctionBuilder(LayeIr.Identifier name, Symbol.Function symbol)
     {
         m_name = name;
@@ -73,7 +75,7 @@ internal sealed class LayeIrFunctionBuilder
     public LayeIr.Function Build()
     {
         var blocks = m_basicBlocks.Select(b => b.Build()).ToArray();
-        return new LayeIr.Function(m_name, m_symbol, blocks);
+        return new LayeIr.Function(m_name, m_symbol, blocks, ExternLibrary);
     }
 
     private void AddInstruction(LayeIr.Insn insn)

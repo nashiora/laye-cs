@@ -113,6 +113,11 @@ internal class LayeIrGenerator
     {
         switch (statement)
         {
+            case LayeCst.BindingDeclaration bindingDecl:
+            {
+                return true;
+            }
+
             case LayeCst.ExpressionStatement exprStmt: return GenerateExpressionIr(builder, exprStmt.Expression) is not null;
 
             default:

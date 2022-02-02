@@ -134,7 +134,7 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Bool() : SymbolType("bool");
     public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 
-    public sealed record class UntypedInteger() : SymbolType("untyped int");
+    public sealed record class UntypedInteger(bool Signed) : SymbolType("untyped int");
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
     public sealed record class SizedInteger(bool Signed, uint BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
 

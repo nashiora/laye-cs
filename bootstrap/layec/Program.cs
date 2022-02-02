@@ -3,7 +3,6 @@
 using laye;
 using laye.Backends;
 using laye.Backends.Llvm;
-using laye.Backends.Msil;
 using laye.Compiler;
 
 var cmdParser = new CommandLine.Parser(config =>
@@ -66,18 +65,9 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         return 1;
     }
 
-    var irModule = LayeIrGenerator.GenerateIr(cstRoots.ToArray(), diagnostics);
-
-    if (irModule is null || diagnostics.Any(d => d is Diagnostic.Error))
-    {
-        PrintDiagnostics(diagnostics);
-        return 1;
-    }
-
     IBackend backend;
     switch (args.Backend)
     {
-        case Backend.Msil: backend = new MsilBackend(); break;
         case Backend.Llvm: backend = new LlvmBackend(); break;
         default: throw new NotImplementedException();
     }
@@ -89,7 +79,7 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         ShowBackendOutput = args.ShowBackendOutput,
     };
 
-    backend.Compile(new[] { irModule }, backendOptions);
+    backend.Compile(cstRoots, backendOptions);
 
     if (diagnostics.Any(d => d is Diagnostic.Error))
     {

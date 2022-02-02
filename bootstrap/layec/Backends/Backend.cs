@@ -6,15 +6,12 @@ internal enum Backend
     None = 0,
 
     C,
-    Msil,
     Llvm,
-    Nasm,
-    Fasm,
 }
 
 internal interface IBackend
 {
-    void Compile(LayeIrModule[] modules, BackendOptions options);
+    void Compile(LayeCstRoot[] roots, BackendOptions options);
 }
 
 internal sealed class BackendOptions

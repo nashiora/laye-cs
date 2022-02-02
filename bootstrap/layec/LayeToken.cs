@@ -27,6 +27,9 @@ internal static class TokenKeywordExt
         Debug.Assert(kw.IsModifier(), "token is not a modifier token");
 #endif
 
+        if (kw.Kind == Keyword.Extern)
+            throw new InvalidOperationException("extern keyword requires arguments: cannot construct normally");
+
         if (kw.Kind > Keyword._Visibility_Modifier_Start_ && kw.Kind < Keyword._Visibility_Modifier_End_)
             return new LayeAst.Visibility(kw);
         else if (kw.Kind > Keyword._CallingConvention_Modifier_Start_ && kw.Kind < Keyword._CallingConvention_Modifier_End_)

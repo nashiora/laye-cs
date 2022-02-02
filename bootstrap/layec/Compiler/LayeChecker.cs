@@ -95,7 +95,23 @@ internal sealed class LayeChecker
                             paramInfos.Add((paramType, paramAstType.Binding.BindingName.Image));
                         }
 
-                        var ccKind = CallingConvention.LayeNoContext;
+                        var callMods = fnDecl.Modifiers.Where(m => m is LayeAst.CallingConvention).Cast<LayeAst.CallingConvention>().ToArray();
+                        if (callMods.Length > 1)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, "only one calling convention modifier allowed per function declaration"));
+                            return Array.Empty<LayeCstRoot>();
+                        }
+
+                        CallingConvention ccKind = callMods.Length == 0 ? CallingConvention.LayeNoContext
+                            : callMods[0].ConventionKeyword.Kind switch
+                        {
+                            Keyword.NoContext => CallingConvention.LayeNoContext,
+                            Keyword.CDecl => CallingConvention.CDecl,
+                            Keyword.StdCall => CallingConvention.StdCall,
+                            Keyword.FastCall => CallingConvention.FastCall,
+                            _ => throw new NotImplementedException(),
+                        };
+
                         var vaKind = fnDecl.VarArgsKind;
 
                         sym.Type = new SymbolType.Function(fnDecl.Name.Image, Array.Empty<TypeParam>(), ccKind, returnType, paramInfos.ToArray(), vaKind);
@@ -230,23 +246,104 @@ internal sealed class LayeChecker
 
         PopScope();
 
-        var modifiers = fnDecl.Modifiers.Select<LayeAst.Modifier, LayeCst.Modifier>(m => m switch
+        var modifiers = new FunctionModifiers();
+        foreach (var modifier in fnDecl.Modifiers)
         {
-            LayeAst.Visibility vis => new LayeCst.Visibility(vis.VisibilityKeyword),
-            LayeAst.CallingConvention cc => new LayeCst.CallingConvention(cc.ConventionKeyword),
-            LayeAst.FunctionHint hint => new LayeCst.FunctionHint(hint.HintKeyword),
-            LayeAst.Accessibility acc => new LayeCst.Accessibility(acc.AccessKeyword),
-            _ => throw new NotImplementedException(),
-        });
+            switch (modifier)
+            {
+                case LayeAst.ExternModifier externMod:
+                {
+                    if (modifiers.ExternModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(modifier.SourceSpan, "only one extern modifier allowed per function declaration"));
+                        return null;
+                    }
 
-        return new LayeCst.FunctionDeclaration(modifiers.ToArray(), fnDecl.Name, sym, functionBody);
+                    modifiers.ExternModifier = new LayeCst.ExternModifier(externMod.ExternKeyword, externMod.LibraryName);
+                } break;
+
+                case LayeAst.CallingConvention callingConv:
+                {
+                    if (modifiers.CallingConvention is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(modifier.SourceSpan, "only one calling convention modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    modifiers.CallingConvention = new LayeCst.CallingConvention(callingConv.ConventionKeyword);
+                } break;
+
+                default:
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(modifier.SourceSpan, $"unsupported function modifier"));
+                    break;
+                }
+            }
+        }
+
+        return new LayeCst.FunctionDeclaration(modifiers, fnDecl.Name, sym, functionBody);
     }
 
     private LayeCst.Stmt? CheckStatement(LayeAst.Stmt statement)
     {
         switch (statement)
         {
+            case LayeAst.FunctionDeclaration functionDecl:
+            {
+                m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "functions not allowed outside of global scope yet"));
+                return null;
+            }
+
+            case LayeAst.BindingDeclaration bindingDecl:
+            {
+                SymbolType? bindingType = null;
+
+                if (bindingDecl.BindingType is not null)
+                {
+                    bindingType = ResolveType(bindingDecl.BindingType);
+                    if (bindingType is null)
+                    {
+                        AssertHasErrors("failing to resolve binding type");
+                        return null;
+                    }
+                }
+                else if (bindingDecl.Expression is null)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "`var` binding requires an initialization expression to type check"));
+                    return null;
+                }
+
+                LayeCst.Expr? expression = null;
+
+                if (bindingDecl.Expression is not null)
+                {
+                    expression = CheckExpression(bindingDecl.Expression);
+                    if (expression is null)
+                    {
+                        AssertHasErrors("failing to check binding expression");
+                        return null;
+                    }
+
+                    if (bindingType is not null)
+                    {
+                        expression = CheckImplicitTypeCast(expression, bindingType);
+                        if (expression is null)
+                        {
+                            AssertHasErrors("failing to check binding expression implicit cast to binding type");
+                            return null;
+                        }
+                    }
+                    else bindingType = expression.Type;
+                }
+
+                var bindingSymbol = new Symbol.Binding(bindingDecl.Name.Image, bindingType);
+                CurrentScope.AddSymbol(bindingSymbol);
+
+                return new LayeCst.BindingDeclaration(Array.Empty<LayeCst.Modifier>(), bindingDecl.Name, bindingSymbol, expression);
+            }
+
             case LayeAst.ExpressionStatement exprStmt:
+            {
                 var expr = CheckExpression(exprStmt.Expression);
                 if (expr is null)
                 {
@@ -255,6 +352,7 @@ internal sealed class LayeChecker
                 }
 
                 return new LayeCst.ExpressionStatement(expr);
+            }
 
             default:
             {
@@ -293,10 +391,10 @@ internal sealed class LayeChecker
         {
             //case LayeAst.NameLookup nameLookupExpr: { }
 
-            case LayeAst.Integer intExpr: return new LayeCst.Integer(intExpr.Literal, new SymbolType.UntypedInteger());
-            case LayeAst.Float floatExpr: return new LayeCst.Float(floatExpr.Literal, new SymbolType.UntypedFloat());
-            case LayeAst.Bool boolExpr: return new LayeCst.Bool(boolExpr.Literal, new SymbolType.UntypedBool());
-            case LayeAst.String stringExpr: return new LayeCst.String(stringExpr.Literal, new SymbolType.UntypedString());
+            case LayeAst.Integer intLit: return new LayeCst.Integer(intLit.Literal, new SymbolType.UntypedInteger(intLit.Signed));
+            case LayeAst.Float floatLit: return new LayeCst.Float(floatLit.Literal, new SymbolType.UntypedFloat());
+            case LayeAst.Bool boolLit: return new LayeCst.Bool(boolLit.Literal, new SymbolType.UntypedBool());
+            case LayeAst.String stringLit: return new LayeCst.String(stringLit.Literal, new SymbolType.UntypedString());
 
             case LayeAst.Invoke invokeExpr: return CheckInvoke(invokeExpr);
 
@@ -310,9 +408,11 @@ internal sealed class LayeChecker
 
     private LayeCst.Expr? CheckInvoke(LayeAst.Invoke invoke)
     {
-        var argValues = new List<LayeCst.Expr>();
-        foreach (var arg in invoke.Arguments)
+        var argValues = new LayeCst.Expr[invoke.Arguments.Length];
+        for (int i = 0; i < argValues.Length; i++)
         {
+            var arg = invoke.Arguments[i];
+
             var argValue = CheckExpression(arg);
             if (argValue is null)
             {
@@ -320,7 +420,7 @@ internal sealed class LayeChecker
                 return null;
             }
 
-            argValues.Add(argValue);
+            argValues[i] = argValue;
         }
 
         if (invoke.TargetExpression is LayeAst.NameLookup targetNameLookup)
@@ -345,18 +445,18 @@ internal sealed class LayeChecker
             {
                 case VarArgsKind.None:
                 {
-                    if (targetParams.Length != argValues.Count)
+                    if (targetParams.Length != argValues.Length)
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected {targetParams.Length} arguments to function `{targetName}`, got {argValues.Count}"));
+                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected {targetParams.Length} arguments to function `{targetName}`, got {argValues.Length}"));
                         return null;
                     }
                 } break;
 
                 case VarArgsKind.C:
                 {
-                    if (targetParams.Length > argValues.Count)
+                    if (targetParams.Length > argValues.Length)
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected at least {targetParams.Length} arguments to C-style varargs function `{targetName}`, got {argValues.Count}"));
+                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected at least {targetParams.Length} arguments to C-style varargs function `{targetName}`, got {argValues.Length}"));
                         return null;
                     }
                 } break;
@@ -364,7 +464,8 @@ internal sealed class LayeChecker
                 default: throw new NotImplementedException($"varargs kind not handled in checker");
             }
 
-            for (int i = 0; i < argValues.Count; i++)
+            int argsToCheckCount = Math.Min(argValues.Length, targetParams.Length);
+            for (int i = 0; i < argsToCheckCount; i++)
             {
                 var arg = argValues[i];
                 var param = targetParams[i];
@@ -376,6 +477,26 @@ internal sealed class LayeChecker
                 }
 
                 argValues[i] = argCast;
+            }
+
+            if (fnSymbol.Type.VarArgs == VarArgsKind.C)
+            {
+                for (int i = argsToCheckCount; i < argValues.Length; i++)
+                {
+                    var arg = argValues[i];
+
+                    if (arg.Type is SymbolType.UntypedInteger unint)
+                    {
+                        var _int = arg as LayeCst.Integer;
+                        Debug.Assert(_int is not null, "untyped integer found in non literal expression");
+
+                        argValues[i] = new LayeCst.Integer(_int.Literal, new SymbolType.Integer(unint.Signed));
+                    }
+                    else if (arg.Type is SymbolType.SizedInteger sint && sint.BitCount < 32)
+                        argValues[i] = new LayeCst.TypeCast(arg.SourceSpan, arg, new SymbolType.SizedInteger(sint.Signed, 32));
+                    else if (arg.Type is SymbolType.SizedFloat sfloat && sfloat.BitCount < 64)
+                        argValues[i] = new LayeCst.TypeCast(arg.SourceSpan, arg, new SymbolType.SizedFloat(64));
+                }
             }
 
             return new LayeCst.InvokeFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());

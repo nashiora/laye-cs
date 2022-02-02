@@ -33,6 +33,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Modifier(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
+    public sealed record class ExternModifier(LayeToken.Keyword ExternKeyword, LayeToken.String LibraryName) : Modifier(SourceSpan.Combine(ExternKeyword, LibraryName));
     public sealed record class Visibility(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
     public sealed record class CallingConvention(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
     public sealed record class FunctionHint(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
@@ -146,7 +147,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public abstract record class Expr(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
-    public sealed record class Integer(LayeToken.Integer Literal) : Expr(Literal.SourceSpan);
+    public sealed record class Integer(LayeToken.Integer Literal, bool Signed = true) : Expr(Literal.SourceSpan);
     public sealed record class Float(LayeToken.Float Literal) : Expr(Literal.SourceSpan);
     public sealed record class Bool(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
     public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan);
@@ -181,6 +182,9 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
         : Stmt(new SourceSpan(NamespaceKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
     public sealed record class ScopedNamespaceDeclaration(LayeToken.Keyword NamespaceKeyword, NamePathPart[] NameParts, LayeToken.Delimiter NameDelimiters, LayeToken.Delimiter OpenBrace, Stmt Declarations, LayeToken.Delimiter CloseBrace)
         : Stmt(new SourceSpan(NamespaceKeyword.SourceSpan.StartLocation, CloseBrace.SourceSpan.EndLocation));
+
+    public sealed record class BindingDeclaration(Type BindingType, LayeToken.Identifier Name, LayeToken.Operator? Assign, Expr? Expression, LayeToken.Delimiter SemiColon)
+        : Stmt(SourceSpan.Combine(BindingType, SemiColon));
 
     public abstract record class FunctionBody(SourceSpan SourceSpan) : IHasSourceSpan;
     public sealed record class EmptyFunctionBody(LayeToken.Delimiter SemiColon) : FunctionBody(SemiColon.SourceSpan);
