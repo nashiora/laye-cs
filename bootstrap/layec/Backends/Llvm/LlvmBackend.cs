@@ -290,6 +290,12 @@ internal sealed class LlvmBackend : IBackend
                 return intValue;
             }
 
+            case LayeCst.LoadValue load:
+            {
+                var address = builder.GetSymbolAddress(load.Symbol);
+                return builder.BuildLoad(address, load.Symbol.Name);
+            }
+
             case LayeCst.TypeCast typeCast:
             {
                 var targetValue = CompileExpression(builder, typeCast.Expression);
@@ -416,6 +422,12 @@ internal sealed class LlvmFunctionBuilder
         var llvmType = Backend.GetLlvmType(type);
         var allocaAddressResult = LLVM.BuildAlloca(Builder, llvmType, name);
         return new(allocaAddressResult, new SymbolType.Pointer(type));
+    }
+
+    public TypedLlvmValue BuildLoad(LlvmValue<SymbolType.Pointer> address, string name = "")
+    {
+        var loadValue = LLVM.BuildLoad(Builder, address.Value, name);
+        return new TypedLlvmValue(loadValue, address.Type.ElementType);
     }
 
     public void BuildStore(TypedLlvmValue value, LlvmValue<SymbolType.Pointer> address)

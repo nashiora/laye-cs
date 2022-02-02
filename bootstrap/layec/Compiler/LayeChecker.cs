@@ -396,6 +396,18 @@ internal sealed class LayeChecker
             case LayeAst.Bool boolLit: return new LayeCst.Bool(boolLit.Literal, new SymbolType.UntypedBool());
             case LayeAst.String stringLit: return new LayeCst.String(stringLit.Literal, new SymbolType.UntypedString());
 
+            case LayeAst.NameLookup nameLookupExpr:
+            {
+                var symbol = CurrentScope.LookupSymbol(nameLookupExpr.Name.Image);
+                if (symbol is null)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, $"the name `{nameLookupExpr.Name.Image}` does not exist in the current context"));
+                    return null;
+                }
+
+                return new LayeCst.LoadValue(nameLookupExpr.SourceSpan, symbol);
+            }
+
             case LayeAst.Invoke invokeExpr: return CheckInvoke(invokeExpr);
 
             default:
