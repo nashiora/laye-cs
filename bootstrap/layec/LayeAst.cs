@@ -34,10 +34,62 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public abstract record class Modifier(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
     public sealed record class ExternModifier(LayeToken.Keyword ExternKeyword, LayeToken.String LibraryName) : Modifier(SourceSpan.Combine(ExternKeyword, LibraryName));
-    public sealed record class Visibility(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
-    public sealed record class CallingConvention(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
-    public sealed record class FunctionHint(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
-    public sealed record class Accessibility(LayeToken.Keyword AccessKeyword) : Modifier(AccessKeyword.SourceSpan);
+    public sealed record class VisibilityModifier(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
+    public sealed record class CallingConventionModifier(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
+    public sealed record class FunctionHintModifier(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
+    public sealed record class AccessModifier(LayeToken.Keyword AccessKeyword) : Modifier(AccessKeyword.SourceSpan);
+
+    public sealed record class ContainerModifiers : IHasSourceSpan
+    {
+        public SourceSpan SourceSpan => AccessModifier?.SourceSpan ?? SourceSpan.Invalid;
+        public bool IsEmpty => AccessModifier is null;
+
+        public AccessModifier? AccessModifier { get; set; }
+        public AccessKind Access => AccessModifier?.AccessKeyword.Kind switch
+        {
+            Keyword.ReadOnly => AccessKind.ReadOnly,
+            Keyword.WriteOnly => AccessKind.WriteOnly,
+            Keyword.Const => AccessKind.Constant,
+            _ => AccessKind.ReadWrite,
+        };
+    }
+
+    public sealed record class FunctionModifiers : IHasSourceSpan
+    {
+        public SourceSpan SourceSpan => IsEmpty ? SourceSpan.Invalid : SourceSpan.Combine(ExternModifier, VisibilityModifier, CallingConventionModifier, FunctionHintModifier);
+        public bool IsEmpty => ExternModifier is null && VisibilityModifier is null && CallingConventionModifier is null && FunctionHintModifier is null;
+
+        public ExternModifier? ExternModifier { get; set; }
+        public string? ExternLibrary => ExternModifier?.LibraryName.LiteralValue;
+
+        public VisibilityModifier? VisibilityModifier { get; set; }
+        public VisibilityKind Visibility => VisibilityModifier?.VisibilityKeyword.Kind switch
+        {
+            Keyword.Public => VisibilityKind.Public,
+            Keyword.Internal => VisibilityKind.Internal,
+            Keyword.Private => VisibilityKind.Private,
+            _ => VisibilityKind.Internal,
+        };
+
+        public CallingConventionModifier? CallingConventionModifier { get; set; }
+        public CallingConvention CallingConvention => CallingConventionModifier?.ConventionKeyword.Kind switch
+        {
+            Keyword.NoContext => CallingConvention.LayeNoContext,
+            Keyword.CDecl => CallingConvention.CDecl,
+            Keyword.FastCall => CallingConvention.FastCall,
+            Keyword.StdCall => CallingConvention.StdCall,
+            _ => CallingConvention.Laye,
+        };
+
+        public FunctionHintModifier? FunctionHintModifier { get; set; }
+        public FunctionHintKind FunctionHint => FunctionHintModifier?.HintKeyword.Kind switch
+        {
+            Keyword.Intrinsic => FunctionHintKind.Intrinsic,
+            Keyword.Export => FunctionHintKind.Export,
+            Keyword.Inline => FunctionHintKind.Inline,
+            _ => FunctionHintKind.None,
+        };
+    }
 
     #endregion
 
@@ -77,69 +129,51 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     ///   - vec3 readonly*
     ///   - string[] *
     /// </summary>
-    public sealed record class PointerType(Type ElementType, Modifier[] Modifiers, LayeToken.Operator PointerSymbol)
-        : Type(new SourceSpan(ElementType.SourceSpan.StartLocation, PointerSymbol.SourceSpan.EndLocation))
-    {
-        public bool IsReadOnly => Modifiers.Any(m => m is Accessibility acc && acc.AccessKeyword.Kind == Keyword.ReadOnly);
-    }
+    public sealed record class PointerType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Operator PointerSymbol)
+        : Type(SourceSpan.Combine(ElementType, PointerSymbol));
 
     /// <summary>
     /// Examples:
     ///   - u8[*]
     ///   - vec4 readonly[*]
     /// </summary>
-    public sealed record class BufferType(Type ElementType, Modifier[] Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Operator PointerSymbol, LayeToken.Delimiter CloseBracket)
-        : Type(new SourceSpan(ElementType.SourceSpan.StartLocation, CloseBracket.SourceSpan.EndLocation))
-    {
-        public bool IsReadOnly => Modifiers.Any(m => m is Accessibility acc && acc.AccessKeyword.Kind == Keyword.ReadOnly);
-    }
+    public sealed record class BufferType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Operator PointerSymbol, LayeToken.Delimiter CloseBracket)
+        : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
     /// <summary>
     /// Examples: 
     ///   - u8[8]
     ///   - vec4 readonly[12]
     /// </summary>
-    public sealed record class ArrayType(Type ElementType, Modifier[] Modifiers, LayeToken.Delimiter OpenBracket, Expr[] RankCounts, LayeToken.Delimiter[] RankDelimiters, LayeToken.Delimiter CloseBracket)
-        : Type(new SourceSpan(ElementType.SourceSpan.StartLocation, CloseBracket.SourceSpan.EndLocation))
-    {
-        public bool IsReadOnly => Modifiers.Any(m => m is Accessibility acc && acc.AccessKeyword.Kind == Keyword.ReadOnly);
-    }
+    public sealed record class ArrayType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, Expr[] RankCounts, LayeToken.Delimiter[] RankDelimiters, LayeToken.Delimiter CloseBracket)
+        : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
     /// <summary>
     /// Examples: 
     ///   - u8[]
     ///   - vec4 readonly[]
     /// </summary>
-    public sealed record class SliceType(Type ElementType, Modifier[] Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Delimiter CloseBracket)
-        : Type(new SourceSpan(ElementType.SourceSpan.StartLocation, CloseBracket.SourceSpan.EndLocation))
-    {
-        public bool IsReadOnly => Modifiers.Any(m => m is Accessibility acc && acc.AccessKeyword.Kind == Keyword.ReadOnly);
-    }
+    public sealed record class SliceType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Delimiter CloseBracket)
+        : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
     /// <summary>
     /// Examples: 
     ///   - u8[dynamic]
     ///   - vec4 readonly[dynamic]
     /// </summary>
-    public sealed record class DynamicArrayType(Type ElementType, Modifier[] Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Keyword DynamicKeyword, LayeToken.Delimiter CloseBracket)
-        : Type(new SourceSpan(ElementType.SourceSpan.StartLocation, CloseBracket.SourceSpan.EndLocation))
-    {
-        public bool IsReadOnly => Modifiers.Any(m => m is Accessibility acc && acc.AccessKeyword.Kind == Keyword.ReadOnly);
-    }
+    public sealed record class DynamicArrayType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Keyword DynamicKeyword, LayeToken.Delimiter CloseBracket)
+        : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
     /// <summary>
     /// Examples: 
     ///   - u8[string]
     ///   - vec4 readonly[string, SomeEnum]
     /// </summary>
-    public sealed record class ContainerType(Type ElementType, Modifier[] Modifiers, LayeToken.Delimiter OpenBracket, LayeAst[] Elements, LayeToken.Delimiter[] ElementDelimiters, LayeToken.Delimiter CloseBracket)
-        : Type(new SourceSpan(ElementType.SourceSpan.StartLocation, CloseBracket.SourceSpan.EndLocation))
-    {
-        public bool IsReadOnly => Modifiers.Any(m => m is Accessibility acc && acc.AccessKeyword.Kind == Keyword.ReadOnly);
-    }
+    public sealed record class ContainerType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeAst[] Elements, LayeToken.Delimiter[] ElementDelimiters, LayeToken.Delimiter CloseBracket)
+        : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
-    public sealed record class FunctionType(Type ReturnType, LayeToken.Operator OpenParen, LayeToken.Operator CloseParen)
-        : Type(new SourceSpan(ReturnType.SourceSpan.StartLocation, CloseParen.SourceSpan.EndLocation));
+    public sealed record class FunctionType(FunctionModifiers Modifiers, Type ReturnType, LayeToken.Operator OpenParen, LayeToken.Operator CloseParen)
+        : Type(SourceSpan.Combine(Modifiers, ReturnType, CloseParen));
 
     #endregion
 
@@ -192,9 +226,9 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ExpressionFunctionBody(LayeToken.Delimiter Arrow, Expr BodyExpression, LayeToken.Delimiter SemiColon)
         : FunctionBody(new SourceSpan(Arrow.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
 
-    public sealed record class FunctionDeclaration(Modifier[] Modifiers, Type ReturnType, LayeToken.Identifier Name, LayeToken.Delimiter OpenParams,
+    public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, Type ReturnType, LayeToken.Identifier Name, LayeToken.Delimiter OpenParams,
         ParamData[] Parameters, LayeToken.Delimiter[] ParameterSeparators, LayeToken.Keyword? VarargsKeyword, VarArgsKind VarArgsKind, LayeToken.Delimiter CloseParams, FunctionBody Body)
-        : Stmt(new SourceSpan((Modifiers.Length == 0 ? (IHasSourceSpan)ReturnType : Modifiers[0]).SourceSpan.StartLocation, Body.SourceSpan.EndLocation));
+        : Stmt(SourceSpan.Combine(Modifiers, ReturnType, Body));
 
     public sealed record class Return(LayeToken.Keyword ReturnKeyword, Expr? ReturnValue, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(ReturnKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));

@@ -19,7 +19,7 @@ internal sealed class LlvmBackend : IBackend
 
     public readonly SymbolType.Pointer U8PtrType = new(new SymbolType.SizedInteger(false, 8));
     public readonly SymbolType.Slice U8SlcType = new(new SymbolType.SizedInteger(false, 8));
-    public readonly SymbolType.Slice ReadOnlyU8SlcType = new(new SymbolType.SizedInteger(false, 8), true);
+    public readonly SymbolType.Slice ReadOnlyU8SlcType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
 
     private readonly Dictionary<Symbol.Function, LLVMValueRef> m_functions = new();
 
@@ -208,8 +208,8 @@ internal sealed class LlvmBackend : IBackend
         var llvmFunctionType = GetLlvmType(function.FunctionSymbol.Type!);
         var llvmFunctionValue = AddFunction(Module, function.FunctionSymbol.Name, llvmFunctionType);
 
-        if (function.Modifiers.ExternModifier is not null && function.Modifiers.ExternModifier.LibraryName.LiteralValue != "C")
-            m_externLibraryReferences.Add(function.Modifiers.ExternModifier.LibraryName.LiteralValue);
+        if (function.Modifiers.ExternLibrary is not null && function.Modifiers.ExternLibrary != "C")
+            m_externLibraryReferences.Add(function.Modifiers.ExternLibrary);
 
         SetFunctionCallConv(llvmFunctionValue, (uint)(function.FunctionSymbol.Type!.CallingConvention switch
         {

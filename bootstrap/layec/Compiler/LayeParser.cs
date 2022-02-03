@@ -128,34 +128,116 @@ internal sealed class LayeParser
 
     #region Modifiers
 
-    private bool ReadModifierList(out LayeAst.Modifier[] modifiers)
+    private LayeAst.ContainerModifiers? ReadContainerModifierList()
     {
-        modifiers = Array.Empty<LayeAst.Modifier>();
+        var modifiers = new LayeAst.ContainerModifiers();
 
-        var result = new List<LayeAst.Modifier>();
-        while (!IsEoF && Check<LayeToken.Keyword>(out var keyword) && keyword.IsModifier())
+        while (Check<LayeToken.Keyword>(out var keyword))
         {
-            if (CheckKeyword(Keyword.Extern, out var externKw))
+            switch (keyword.Kind)
             {
-                Advance(); // `extern`
-
-                if (!Expect<LayeToken.String>(out var externString))
+                case Keyword.ReadOnly: case Keyword.WriteOnly: case Keyword.Const:
                 {
-                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected string as extern library name"));
-                    return false;
-                }
+                    if (modifiers.AccessModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one access modifier allowed per container type"));
+                        return null;
+                    }
 
-                result.Add(new LayeAst.ExternModifier(externKw, externString));
-            }
-            else
-            {
-                result.Add(keyword.ToModifierNode());
-                Advance(); // modifier keyword
+                    Advance(); // keyword
+                    modifiers.AccessModifier = new(keyword);
+                } break;
+
+                default: goto exit;
             }
         }
 
-        modifiers = result.ToArray();
-        return true;
+    exit:
+        return modifiers;
+    }
+
+    private LayeAst.FunctionModifiers? ReadFunctionModifierList()
+    {
+        var modifiers = new LayeAst.FunctionModifiers();
+
+        while (Check<LayeToken.Keyword>(out var keyword))
+        {
+            switch (keyword.Kind)
+            {
+                case Keyword.Public: case Keyword.Internal: case Keyword.Private:
+                {
+                    if (modifiers.VisibilityModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one visibility modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    Advance(); // keyword
+                    modifiers.VisibilityModifier = new(keyword);
+                } break;
+                
+                case Keyword.NoContext: case Keyword.CDecl:
+                case Keyword.FastCall:  case Keyword.StdCall:
+                {
+                    if (modifiers.CallingConventionModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one calling convention modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    Advance(); // keyword
+                    modifiers.CallingConventionModifier = new(keyword);
+                } break;
+                
+                case Keyword.Intrinsic: case Keyword.Export:
+                case Keyword.Inline:    case Keyword.Naked:
+                {
+                    if (modifiers.FunctionHintModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one function hint modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    if (modifiers.ExternModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one of either function hint modifier and extern modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    Advance(); // keyword
+                    modifiers.FunctionHintModifier = new(keyword);
+                } break;
+
+                case Keyword.Extern:
+                {
+                    if (modifiers.ExternModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one extern modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    if (modifiers.FunctionHintModifier is not null)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one of either function hint modifier and extern modifier allowed per function declaration"));
+                        return null;
+                    }
+
+                    Advance(); // keyword
+                    if (!Expect<LayeToken.String>(out var externLibraryName))
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected string as extern library name"));
+                        return null;
+                    }
+
+                    modifiers.ExternModifier = new(keyword, externLibraryName);
+                } break;
+
+                default: goto exit;
+            }
+        }
+
+    exit:
+        return modifiers;
     }
 
     #endregion
@@ -256,7 +338,7 @@ internal sealed class LayeParser
 
         while (!IsEoF)
         {
-            if (!ReadModifierList(out var containerModifiers))
+            if (ReadContainerModifierList() is not LayeAst.ContainerModifiers containerModifiers)
             {
                 AssertHasError("failing to parse type modifiers");
                 return null;
@@ -292,7 +374,16 @@ internal sealed class LayeParser
                     type = new LayeAst.BufferType(type, containerModifiers, openBracketDelim, starOp2, closeBracketDelim2);
                 }
             }
-            else break;
+            else
+            {
+                if (!containerModifiers.IsEmpty)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected container type syntax after container type modifiers"));
+                    return null;
+                }
+
+                break;
+            }
         }
 
         return type;
@@ -310,7 +401,7 @@ internal sealed class LayeParser
     
     private LayeAst.FunctionDeclaration? ReadFunctionDeclaration()
     {
-        if (!ReadModifierList(out var modifiers))
+        if (ReadFunctionModifierList() is not LayeAst.FunctionModifiers functionModifiers)
         {
             AssertHasError("failing to read function decl modifiers");
             return null;
@@ -329,10 +420,10 @@ internal sealed class LayeParser
             return null;
         }
 
-        return ReadFunctionDeclaration(modifiers, returnType, functionName);
+        return ReadFunctionDeclaration(functionModifiers, returnType, functionName);
     }
 
-    private LayeAst.FunctionDeclaration? ReadFunctionDeclaration(LayeAst.Modifier[] modifiers, LayeAst.Type returnType, LayeToken.Identifier functionName)
+    private LayeAst.FunctionDeclaration? ReadFunctionDeclaration(LayeAst.FunctionModifiers modifiers, LayeAst.Type returnType, LayeToken.Identifier functionName)
     {
         if (!ExpectDelimiter(Delimiter.OpenParen, out var openParams))
         {
@@ -452,7 +543,7 @@ internal sealed class LayeParser
         {
             Advance(); // ident
             if (CheckDelimiter(Delimiter.OpenParen, out var _))
-                return ReadFunctionDeclaration(Array.Empty<LayeAst.Modifier>(), bindingType, bindingIdent);
+                return ReadFunctionDeclaration(new(), bindingType, bindingIdent);
 
             LayeToken.Operator? opEqToken = null;
             LayeAst.Expr? assignedValue = null;

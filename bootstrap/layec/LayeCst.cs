@@ -14,13 +14,13 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     #region Modifiers
 
-    public abstract record class Modifier(SourceSpan SourceSpan) : LayeCst(SourceSpan);
-
-    public sealed record class ExternModifier(LayeToken.Keyword ExternKeyword, LayeToken.String LibraryName) : Modifier(SourceSpan.Combine(ExternKeyword, LibraryName));
-    public sealed record class Visibility(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
-    public sealed record class CallingConvention(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
-    public sealed record class FunctionHint(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
-    public sealed record class Accessibility(LayeToken.Keyword AccessKeyword) : Modifier(AccessKeyword.SourceSpan);
+    public sealed record class FunctionModifiers
+    {
+        public string? ExternLibrary { get; set; }
+        public VisibilityKind Visibility { get; set; } = VisibilityKind.Internal;
+        public CallingConvention CallingConvention { get; set; } = CallingConvention.Laye;
+        public FunctionHintKind FunctionHint { get; set; } = FunctionHintKind.None;
+    }
 
     #endregion
 
@@ -49,7 +49,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
 
-    public sealed record class BindingDeclaration(Modifier[] Modifiers, LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
+    public sealed record class BindingDeclaration(LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
         : Stmt(SourceSpan.Combine(new IHasSourceSpan?[] { BindingName, Expression }));
 
     public abstract record class FunctionBody;
@@ -61,10 +61,4 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
         : Stmt(FunctionName.SourceSpan);
 
     #endregion
-}
-
-internal sealed record class FunctionModifiers
-{
-    public LayeCst.ExternModifier? ExternModifier { get; set; }
-    public LayeCst.CallingConvention? CallingConvention { get; set; }
 }

@@ -146,9 +146,9 @@ internal abstract record class SymbolType(string Name)
 
     public sealed record class RawPtr() : SymbolType("rawptr");
     public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType("array");
-    public sealed record class Pointer(SymbolType ElementType, bool ReadOnly = false) : SymbolType("pointer");
-    public sealed record class Buffer(SymbolType ElementType, bool ReadOnly = false) : SymbolType("buffer");
-    public sealed record class Slice(SymbolType ElementType, bool ReadOnly = false) : SymbolType("slice");
+    public sealed record class Pointer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("pointer");
+    public sealed record class Buffer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("buffer");
+    public sealed record class Slice(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("slice");
 
     public sealed record class Function(string Name, TypeParam[] TypeParams, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs) : SymbolType($"function {Name}");
     public sealed record class Struct(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);

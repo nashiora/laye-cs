@@ -5,6 +5,8 @@ public readonly struct SourceLocation : IEquatable<SourceLocation>, IComparable<
     public static bool operator ==(SourceLocation left, SourceLocation right) =>  left.Equals(right);
     public static bool operator !=(SourceLocation left, SourceLocation right) => !left.Equals(right);
 
+    public static readonly SourceLocation Invalid = new("", uint.MaxValue, uint.MaxValue, uint.MaxValue);
+
     public readonly string SourceName;
     public readonly uint SourceIndex;
 

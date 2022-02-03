@@ -23,3 +23,37 @@ public enum VarArgsKind
     Laye,
     C,
 }
+
+public enum FunctionHintKind
+{
+    None,
+    Intrinsic,
+    Export,
+    Extern,
+    Inline,
+    Naked,
+}
+
+public enum VisibilityKind
+{
+    /// <summary>
+    /// Public marks an entity as visible outside of its own project
+    /// </summary>
+    Public,
+    /// <summary>
+    ///  Internal marks an entity as visible only within the current project
+    /// </summary>
+    Internal,
+    /// <summary>
+    /// Private marks an entity as visible only within the current file
+    /// </summary>
+    Private,
+}
+
+public enum AccessKind
+{
+    ReadWrite,
+    ReadOnly,
+    WriteOnly,
+    Constant,
+}

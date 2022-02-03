@@ -16,33 +16,6 @@ internal abstract record class LayeToken(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Keyword(SourceSpan SourceSpan, laye.Keyword Kind, uint SizeData = 0) : LayeToken(SourceSpan);
 }
 
-internal static class TokenKeywordExt
-{
-    public static bool IsModifier(this LayeToken.Keyword kw)
-        => kw.Kind > Keyword._Modifier_Start_ && kw.Kind < Keyword._Modifier_End_;
-
-    public static LayeAst.Modifier ToModifierNode(this LayeToken.Keyword kw)
-    {
-#if DEBUG
-        Debug.Assert(kw.IsModifier(), "token is not a modifier token");
-#endif
-
-        if (kw.Kind == Keyword.Extern)
-            throw new InvalidOperationException("extern keyword requires arguments: cannot construct normally");
-
-        if (kw.Kind > Keyword._Visibility_Modifier_Start_ && kw.Kind < Keyword._Visibility_Modifier_End_)
-            return new LayeAst.Visibility(kw);
-        else if (kw.Kind > Keyword._CallingConvention_Modifier_Start_ && kw.Kind < Keyword._CallingConvention_Modifier_End_)
-            return new LayeAst.CallingConvention(kw);
-        else if (kw.Kind > Keyword._FunctionHint_Modifier_Start_ && kw.Kind < Keyword._FunctionHint_Modifier_End_)
-            return new LayeAst.FunctionHint(kw);
-        else if (kw.Kind > Keyword._Accessibility_Modifier_Start_ && kw.Kind < Keyword._Accessibility_Modifier_End_)
-            return new LayeAst.Accessibility(kw);
-
-        throw new InvalidOperationException($"keyword with kind {kw.Kind} is not a valid modifier");
-    }
-}
-
 internal enum Delimiter
 {
     Invalid = 0,
@@ -144,42 +117,25 @@ internal enum Keyword
 
     #region Modifiers
 
-    _Modifier_Start_,
-
-    _Visibility_Modifier_Start_,
+    Extern,
 
     Public,
-
-    _Visibility_Modifier_End_,
-
-    _CallingConvention_Modifier_Start_,
+    Internal,
+    Private,
 
     NoContext,
     CDecl,
     FastCall,
     StdCall,
 
-    _CallingConvention_Modifier_End_,
-
-    _FunctionHint_Modifier_Start_,
-
     Intrinsic,
     Export,
-    Extern,
     Inline,
     Naked,
-
-    _FunctionHint_Modifier_End_,
-
-    _Accessibility_Modifier_Start_,
 
     Const, // const makes something actually a compile time constant
     ReadOnly, // readonly make something only readable (either only reading a binding, but not reassigning OR not allowing writes thru containers)
     WriteOnly,
-
-    _Accessibility_Modifier_End_,
-
-    _Modifier_End_,
 
     #endregion
 

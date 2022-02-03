@@ -95,23 +95,7 @@ internal sealed class LayeChecker
                             paramInfos.Add((paramType, paramAstType.Binding.BindingName.Image));
                         }
 
-                        var callMods = fnDecl.Modifiers.Where(m => m is LayeAst.CallingConvention).Cast<LayeAst.CallingConvention>().ToArray();
-                        if (callMods.Length > 1)
-                        {
-                            m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, "only one calling convention modifier allowed per function declaration"));
-                            return Array.Empty<LayeCstRoot>();
-                        }
-
-                        CallingConvention ccKind = callMods.Length == 0 ? CallingConvention.LayeNoContext
-                            : callMods[0].ConventionKeyword.Kind switch
-                        {
-                            Keyword.NoContext => CallingConvention.LayeNoContext,
-                            Keyword.CDecl => CallingConvention.CDecl,
-                            Keyword.StdCall => CallingConvention.StdCall,
-                            Keyword.FastCall => CallingConvention.FastCall,
-                            _ => throw new NotImplementedException(),
-                        };
-
+                        var ccKind = fnDecl.Modifiers.CallingConvention;
                         var vaKind = fnDecl.VarArgsKind;
 
                         sym.Type = new SymbolType.Function(fnDecl.Name.Image, Array.Empty<TypeParam>(), ccKind, returnType, paramInfos.ToArray(), vaKind);
@@ -196,14 +180,7 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                var modifiers = pointerType.Modifiers;
-                if (!CheckContainerModifiers(modifiers, out bool isReadOnly))
-                {
-                    AssertHasErrors("checking container modifiers");
-                    return null;
-                }
-
-                return new SymbolType.Pointer(elementType, isReadOnly);
+                return new SymbolType.Pointer(elementType, pointerType.Modifiers.Access);
             }
 
             case LayeAst.BufferType bufferType:
@@ -215,14 +192,7 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                var modifiers = bufferType.Modifiers;
-                if (!CheckContainerModifiers(modifiers, out bool isReadOnly))
-                {
-                    AssertHasErrors("checking container modifiers");
-                    return null;
-                }
-
-                return new SymbolType.Buffer(elementType, isReadOnly);
+                return new SymbolType.Buffer(elementType, bufferType.Modifiers.Access);
             }
 
             default:
@@ -230,43 +200,6 @@ internal sealed class LayeChecker
                 m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unrecognized type)"));
                 return null;
             }
-        }
-
-        bool CheckContainerModifiers(LayeAst.Modifier[] modifiers, out bool isReadOnly)
-        {
-            isReadOnly = false;
-
-            var supportedModifiers = modifiers.Where(m => m is LayeAst.Accessibility);
-            var unsupportedModifiers = modifiers.Where(m => !supportedModifiers.Contains(m));
-
-            if (unsupportedModifiers.Any())
-            {
-                foreach (var unmod in unsupportedModifiers)
-                    m_diagnostics.Add(new Diagnostic.Error(unmod.SourceSpan, "unsupported modifier word for container type"));
-
-                return false;
-            }
-
-            var accessibilityModifiers = supportedModifiers.Where(m => m is LayeAst.Accessibility).Cast<LayeAst.Accessibility>();
-            if (accessibilityModifiers.Count() > 1)
-            {
-                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "duplicate accessibility modifiers on container type"));
-                return false;
-            }
-
-            var accessModifier = accessibilityModifiers.SingleOrDefault();
-            if (accessModifier is not null)
-            {
-                if (accessModifier.AccessKeyword.Kind == Keyword.ReadOnly)
-                    isReadOnly = true;
-                else
-                {
-                    m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "unrecognized accessibility modifier on container type"));
-                    return false;
-                }
-            }
-
-            return true;
         }
     }
 
@@ -297,40 +230,13 @@ internal sealed class LayeChecker
 
         PopScope();
 
-        var modifiers = new FunctionModifiers();
-        foreach (var modifier in fnDecl.Modifiers)
+        var modifiers = new LayeCst.FunctionModifiers()
         {
-            switch (modifier)
-            {
-                case LayeAst.ExternModifier externMod:
-                {
-                    if (modifiers.ExternModifier is not null)
-                    {
-                        m_diagnostics.Add(new Diagnostic.Error(modifier.SourceSpan, "only one extern modifier allowed per function declaration"));
-                        return null;
-                    }
-
-                    modifiers.ExternModifier = new LayeCst.ExternModifier(externMod.ExternKeyword, externMod.LibraryName);
-                } break;
-
-                case LayeAst.CallingConvention callingConv:
-                {
-                    if (modifiers.CallingConvention is not null)
-                    {
-                        m_diagnostics.Add(new Diagnostic.Error(modifier.SourceSpan, "only one calling convention modifier allowed per function declaration"));
-                        return null;
-                    }
-
-                    modifiers.CallingConvention = new LayeCst.CallingConvention(callingConv.ConventionKeyword);
-                } break;
-
-                default:
-                {
-                    m_diagnostics.Add(new Diagnostic.Error(modifier.SourceSpan, $"unsupported function modifier"));
-                    break;
-                }
-            }
-        }
+            ExternLibrary = fnDecl.Modifiers.ExternLibrary,
+            Visibility = fnDecl.Modifiers.Visibility,
+            CallingConvention = fnDecl.Modifiers.CallingConvention,
+            FunctionHint = fnDecl.Modifiers.FunctionHint,
+        };
 
         return new LayeCst.FunctionDeclaration(modifiers, fnDecl.Name, sym, functionBody);
     }
@@ -390,7 +296,7 @@ internal sealed class LayeChecker
                 var bindingSymbol = new Symbol.Binding(bindingDecl.Name.Image, bindingType);
                 CurrentScope.AddSymbol(bindingSymbol);
 
-                return new LayeCst.BindingDeclaration(Array.Empty<LayeCst.Modifier>(), bindingDecl.Name, bindingSymbol, expression);
+                return new LayeCst.BindingDeclaration(bindingDecl.Name, bindingSymbol, expression);
             }
 
             case LayeAst.ExpressionStatement exprStmt:
@@ -601,7 +507,7 @@ internal sealed class LayeChecker
 
             case SymbolType.UntypedString:
             {
-                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == new SymbolType.SizedInteger(false, 8) && _targetBufferType.ReadOnly)
+                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == new SymbolType.SizedInteger(false, 8) && _targetBufferType.Access == AccessKind.ReadOnly)
                 {
                     if (value is LayeCst.String _string)
                         return new LayeCst.String(_string.Literal, _targetBufferType);
@@ -612,7 +518,7 @@ internal sealed class LayeChecker
             {
                 if (targetType is SymbolType.Pointer _targetPointerType && _targetPointerType.ElementType == pointerType.ElementType)
                 {
-                    if (_targetPointerType.ReadOnly)
+                    if (_targetPointerType.Access == AccessKind.ReadOnly)
                         return new LayeCst.TypeCast(value.SourceSpan, value, pointerType);
                 }
             } break;
@@ -621,7 +527,7 @@ internal sealed class LayeChecker
             {
                 if (targetType is SymbolType.Pointer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
                 {
-                    if (_targetBufferType.ReadOnly)
+                    if (_targetBufferType.Access == AccessKind.ReadOnly)
                         return new LayeCst.TypeCast(value.SourceSpan, value, bufferType);
                 }
             } break;

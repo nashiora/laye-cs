@@ -412,6 +412,8 @@ internal sealed class LayeLexer
             case "noinit": return new LayeToken.Keyword(span, Keyword.NoInit);
 
             case "public": return new LayeToken.Keyword(span, Keyword.Public);
+            case "internal": return new LayeToken.Keyword(span, Keyword.Internal);
+            case "private": return new LayeToken.Keyword(span, Keyword.Private);
             case "nocontext": return new LayeToken.Keyword(span, Keyword.NoContext);
             case "cdecl": return new LayeToken.Keyword(span, Keyword.CDecl);
             case "fastcall": return new LayeToken.Keyword(span, Keyword.FastCall);

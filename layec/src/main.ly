@@ -1,9 +1,23 @@
+
+void test()
+{
+    printf("test (with context)%c", 10);
+}
+
+nocontext void test_nocontext()
+{
+    printf("test (without context)%c", 10);
+}
+
 void main()
 {
-    printf("Hello, hunter! from C stdlib%c", 10);
+    u8 [*]cmdarg = GetCommandLineA();
+    printf("%s%c", cmdarg, 10);
 
-    i32 consoleHandle = GetStdHandle(-11);
-    WriteConsoleA(consoleHandle, "Hello, hunter! from Win32", 25, 0, 0);
+    test();
+    test_nocontext();
 
-    printf("%c", 10);
+    //i32 consoleHandle = GetStdHandle(-11);
+    //WriteConsoleA(consoleHandle, "Hello, hunter! from Win32 offscreen", 25, 0, 0);
+    //printf("%c", 10);
 }
