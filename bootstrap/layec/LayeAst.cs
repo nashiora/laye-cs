@@ -8,11 +8,11 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 {
     #region Shared Data
 
-    public sealed record class BindingData(Modifier[] Modifiers, Type BindingType, LayeToken.Identifier BindingName)
-        : LayeAst(new SourceSpan((Modifiers.Length == 0 ? (IHasSourceSpan)BindingType : Modifiers[0]).SourceSpan.StartLocation, BindingName.SourceSpan.EndLocation));
+    public sealed record class BindingData(ContainerModifiers Modifiers, Type BindingType, LayeToken.Identifier BindingName)
+        : LayeAst(SourceSpan.Combine(Modifiers, BindingType, BindingName));
 
     public sealed record class ParamData(BindingData Binding, LayeToken.Operator? AssignOperator, Expr? DefaultValue)
-        : LayeAst(new SourceSpan(Binding.SourceSpan.StartLocation, (DefaultValue ?? (IHasSourceSpan)Binding).SourceSpan.EndLocation));
+        : LayeAst(SourceSpan.Combine(new IHasSourceSpan?[] { Binding, DefaultValue }));
 
     public abstract record class PathPart(SourceSpan SourceSpan);
     public sealed record class EmptyPathPart(SourceLocation Location) : PathPart(new SourceSpan(Location, Location));
@@ -172,8 +172,8 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ContainerType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeAst[] Elements, LayeToken.Delimiter[] ElementDelimiters, LayeToken.Delimiter CloseBracket)
         : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
-    public sealed record class FunctionType(FunctionModifiers Modifiers, Type ReturnType, LayeToken.Operator OpenParen, LayeToken.Operator CloseParen)
-        : Type(SourceSpan.Combine(Modifiers, ReturnType, CloseParen));
+    public sealed record class FunctionType(FunctionModifiers Modifiers, Type ReturnType, Type[] ParameterTypes, VarArgsKind VarArgsKind)
+        : Type(SourceSpan.Combine(Modifiers, ReturnType));
 
     #endregion
 
@@ -225,6 +225,9 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class BlockFunctionBody(Block BodyBlock) : FunctionBody(BodyBlock.SourceSpan);
     public sealed record class ExpressionFunctionBody(LayeToken.Delimiter Arrow, Expr BodyExpression, LayeToken.Delimiter SemiColon)
         : FunctionBody(new SourceSpan(Arrow.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
+
+    public sealed record class StructDeclaration(LayeToken.Keyword StructKeyword, LayeToken.Identifier Name, ParamData[] Fields)
+        : Stmt(SourceSpan.Combine(StructKeyword, Name));
 
     public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, Type ReturnType, LayeToken.Identifier Name, LayeToken.Delimiter OpenParams,
         ParamData[] Parameters, LayeToken.Delimiter[] ParameterSeparators, LayeToken.Keyword? VarargsKeyword, VarArgsKind VarArgsKind, LayeToken.Delimiter CloseParams, FunctionBody Body)

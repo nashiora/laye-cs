@@ -1,16 +1,29 @@
 
+struct test_struct
+{
+    int a;
+    readonly int b;
+}
+
+struct __laye_context
+{
+    rawptr nocontext(uint, rawptr) allocatorFunction;
+}
+
 void test()
 {
     printf("test (with context)%c", 10);
 }
 
-nocontext void test_nocontext()
+void nocontext test_nocontext()
 {
     printf("test (without context)%c", 10);
 }
 
 void main()
 {
+    __laye_context lcontext;
+
     u8 [*]cmdarg = GetCommandLineA();
     printf("%s%c", cmdarg, 10);
 

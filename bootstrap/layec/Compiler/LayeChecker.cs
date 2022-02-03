@@ -48,6 +48,18 @@ internal sealed class LayeChecker
             {
                 switch (node)
                 {
+                    case LayeAst.StructDeclaration structDecl:
+                    {
+                        var sym = new Symbol.Struct(structDecl.Name.Image);
+                        syms[structDecl] = sym;
+
+                        if (!m_globalSymbols.AddSymbol(sym))
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(structDecl.Name.SourceSpan, $"`{sym.Name}` is already defined in this scope"));
+                            return Array.Empty<LayeCstRoot>();
+                        }
+                    } break;
+
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
                         var sym = new Symbol.Function(fnDecl.Name.Image);
@@ -55,10 +67,16 @@ internal sealed class LayeChecker
 
                         if (!m_globalSymbols.AddSymbol(sym))
                         {
-                            m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, $"`{sym.Name}` is already define in this scope (function overloading is not supported)"));
+                            m_diagnostics.Add(new Diagnostic.Error(fnDecl.Name.SourceSpan, $"`{sym.Name}` is already defined in this scope (function overloading is not supported)"));
                             return Array.Empty<LayeCstRoot>();
                         }
                     } break;
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(node.SourceSpan, $"internal compiler error: unrecognized syntax at top level ({node.GetType().Name})"));
+                        return Array.Empty<LayeCstRoot>();
+                    }
                 }
             }
         }
@@ -71,6 +89,26 @@ internal sealed class LayeChecker
             {
                 switch (node)
                 {
+                    case LayeAst.StructDeclaration structDecl:
+                    {
+                        var sym = (Symbol.Struct)syms[structDecl];
+
+                        var fields = new List<(SymbolType, string)>();
+                        foreach (var field in structDecl.Fields)
+                        {
+                            var fieldType = ResolveType(field.Binding.BindingType);
+                            if (fieldType is null)
+                            {
+                                AssertHasErrors("resolving struct field type");
+                                return Array.Empty<LayeCstRoot>();
+                            }
+
+                            fields.Add((fieldType, field.Binding.BindingName.Image));
+                        }
+
+                        sym.Type = new SymbolType.Struct(structDecl.Name.Image, fields.ToArray());
+                    } break;
+
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
                         var sym = (Symbol.Function)syms[fnDecl];
@@ -78,7 +116,7 @@ internal sealed class LayeChecker
                         var returnType = ResolveType(fnDecl.ReturnType);
                         if (returnType is null)
                         {
-                            AssertHasErrors("failing to resolve function return type in symbol creation");
+                            AssertHasErrors("resolving function return type in symbol creation");
                             return Array.Empty<LayeCstRoot>();
                         }
 
@@ -88,7 +126,7 @@ internal sealed class LayeChecker
                             var paramType = ResolveType(paramAstType.Binding.BindingType);
                             if (paramType is null)
                             {
-                                AssertHasErrors("failing to resolve function parameter type in symbol creation");
+                                AssertHasErrors("resolving function parameter type in symbol creation");
                                 return Array.Empty<LayeCstRoot>();
                             }
 
@@ -98,8 +136,14 @@ internal sealed class LayeChecker
                         var ccKind = fnDecl.Modifiers.CallingConvention;
                         var vaKind = fnDecl.VarArgsKind;
 
-                        sym.Type = new SymbolType.Function(fnDecl.Name.Image, Array.Empty<TypeParam>(), ccKind, returnType, paramInfos.ToArray(), vaKind);
+                        sym.Type = new SymbolType.Function(fnDecl.Name.Image, ccKind, returnType, paramInfos.ToArray(), vaKind);
                     } break;
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(node.SourceSpan, $"internal compiler error: unrecognized syntax at top level ({node.GetType().Name})"));
+                        return Array.Empty<LayeCstRoot>();
+                    }
                 }
             }
         }
@@ -114,6 +158,8 @@ internal sealed class LayeChecker
             {
                 switch (node)
                 {
+                    case LayeAst.StructDeclaration: break;
+
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
                         var sym = (Symbol.Function)syms[fnDecl];
@@ -127,6 +173,12 @@ internal sealed class LayeChecker
 
                         topLevelNodes.Add(fn);
                     } break;
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(node.SourceSpan, $"internal compiler error: unrecognized syntax at top level ({node.GetType().Name})"));
+                        return Array.Empty<LayeCstRoot>();
+                    }
                 }
             }
 
@@ -140,6 +192,40 @@ internal sealed class LayeChecker
     {
         switch (astType)
         {
+            case LayeAst.NamedType namedType:
+            {
+                var path = namedType.TypePath;
+                switch (path)
+                {
+                    case LayeAst.NamePathPart namePart:
+                    {
+                        var symbol = CurrentScope.LookupSymbol(namePart.Name.Image);
+                        if (symbol is null)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"the name `{namePart.Name.Image}` does not exist in the current context"));
+                            return null;
+                        }
+
+                        switch (symbol)
+                        {
+                            case Symbol.Struct structSymbol: return structSymbol.Type!;
+
+                            default:
+                            {
+                                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"`{namePart.Name.Image}` is not a type"));
+                                return null;
+                            }
+                        }
+                    }
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unable to resolve path)"));
+                        return null;
+                    }
+                }
+            }
+
             case LayeAst.BuiltInType builtInType:
             {
                 var kw = builtInType.BuiltInKeyword;
@@ -176,7 +262,7 @@ internal sealed class LayeChecker
                 var elementType = ResolveType(pointerType.ElementType);
                 if (elementType is null)
                 {
-                    AssertHasErrors("failing to resolve pointer element type");
+                    AssertHasErrors("resolving pointer element type");
                     return null;
                 }
 
@@ -188,16 +274,41 @@ internal sealed class LayeChecker
                 var elementType = ResolveType(bufferType.ElementType);
                 if (elementType is null)
                 {
-                    AssertHasErrors("failing to resolve buffer element type");
+                    AssertHasErrors("resolving buffer element type");
                     return null;
                 }
 
                 return new SymbolType.Buffer(elementType, bufferType.Modifiers.Access);
             }
 
+            case LayeAst.FunctionType functionType:
+            {
+                var returnType = ResolveType(functionType.ReturnType);
+                if (returnType is null)
+                {
+                    AssertHasErrors("resolving function return type");
+                    return null;
+                }
+
+                var parameterTypes = new SymbolType[functionType.ParameterTypes.Length];
+                for (int i = 0; i < parameterTypes.Length; i++)
+                {
+                    var paramType = ResolveType(functionType.ParameterTypes[i]);
+                    if (paramType is null)
+                    {
+                        AssertHasErrors("resolving function parameter type");
+                        return null;
+                    }
+
+                    parameterTypes[i] = paramType;
+                }
+
+                return new SymbolType.FunctionPointer(functionType.Modifiers.CallingConvention, returnType, parameterTypes, functionType.VarArgsKind);
+            }
+
             default:
             {
-                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unrecognized type)"));
+                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"failed to resolve type (unrecognized type {astType.GetType().Name})"));
                 return null;
             }
         }
@@ -225,7 +336,11 @@ internal sealed class LayeChecker
                 functionBody = new LayeCst.BlockFunctionBody(block);
             } break;
 
-            default: throw new NotImplementedException();
+            default:
+            {
+                m_diagnostics.Add(new Diagnostic.Error(fnDecl.Body.SourceSpan, $"internal compiler error: unrecognized function body type {fnDecl.Body.GetType().Name}"));
+                return null;
+            }
         }
 
         PopScope();
@@ -430,7 +545,11 @@ internal sealed class LayeChecker
                     }
                 } break;
 
-                default: throw new NotImplementedException($"varargs kind not handled in checker");
+                default:
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"internal compiler error: varargs kind {fnSymbol.Type.VarArgs} not handled in checker"));
+                    return null;
+                }
             }
 
             int argsToCheckCount = Math.Min(argValues.Length, targetParams.Length);

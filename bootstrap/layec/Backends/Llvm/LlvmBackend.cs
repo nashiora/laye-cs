@@ -174,7 +174,12 @@ internal sealed class LlvmBackend : IBackend
                     return X86FP80TypeInContext(Context);
                 else if (_fx.BitCount == 128)
                     return FP128TypeInContext(Context);
-                else throw new NotImplementedException();
+                else
+                {
+                    Console.WriteLine($"internal compiler error: unsupported float type f{_fx.BitCount}");
+                    Environment.Exit(1);
+                    return default;
+                }
             }
 
             case SymbolType.RawPtr: return PointerType(Int8TypeInContext(Context), 0);
@@ -199,7 +204,36 @@ internal sealed class LlvmBackend : IBackend
                 return FunctionType(llvmReturnType, llvmParameterTypes, isCVarArgs);
             }
 
-            default: throw new NotImplementedException();
+            case SymbolType.FunctionPointer functionPointer:
+            {
+                var llvmReturnType = GetLlvmType(functionPointer.ReturnType);
+
+                var llvmParameterTypes = new LLVMTypeRef[functionPointer.ParameterTypes.Length];
+                for (int i = 0; i < llvmParameterTypes.Length; i++)
+                    llvmParameterTypes[i] = GetLlvmType(functionPointer.ParameterTypes[i]);
+
+                bool isCVarArgs = functionPointer.VarArgs == VarArgsKind.C;
+                return PointerType(FunctionType(llvmReturnType, llvmParameterTypes, isCVarArgs), 0);
+            }
+
+            case SymbolType.Struct _struct:
+            {
+                var elementTypes = new LLVMTypeRef[_struct.Fields.Length];
+                for (int i = 0; i < elementTypes.Length; i++)
+                {
+                    var field = _struct.Fields[i];
+                    elementTypes[i] = GetLlvmType(field.Type);
+                }
+
+                return StructTypeInContext(Context, elementTypes, false);
+            }
+
+            default:
+            {
+                Console.WriteLine($"internal compiler error: invalid Laye type {type.GetType().Name} in LLVM backend");
+                Environment.Exit(1);
+                return default;
+            }
         }
     }
 
@@ -211,17 +245,24 @@ internal sealed class LlvmBackend : IBackend
         if (function.Modifiers.ExternLibrary is not null && function.Modifiers.ExternLibrary != "C")
             m_externLibraryReferences.Add(function.Modifiers.ExternLibrary);
 
-        SetFunctionCallConv(llvmFunctionValue, (uint)(function.FunctionSymbol.Type!.CallingConvention switch
+        LLVMCallConv llvmCallConv;
+        switch (function.FunctionSymbol.Type!.CallingConvention)
         {
-            CallingConvention.Laye => LLVMCallConv.LLVMCCallConv,
-            CallingConvention.LayeNoContext => LLVMCallConv.LLVMCCallConv,
+            case CallingConvention.Laye: llvmCallConv = LLVMCallConv.LLVMCCallConv; break;
+            case CallingConvention.LayeNoContext: llvmCallConv = LLVMCallConv.LLVMCCallConv; break;
+            case CallingConvention.CDecl: llvmCallConv = LLVMCallConv.LLVMCCallConv; break;
+            case CallingConvention.StdCall: llvmCallConv = LLVMCallConv.LLVMX86StdcallCallConv; break;
+            case CallingConvention.FastCall: llvmCallConv = LLVMCallConv.LLVMX86FastcallCallConv; break;
 
-            CallingConvention.CDecl => LLVMCallConv.LLVMCCallConv,
-            CallingConvention.StdCall => LLVMCallConv.LLVMX86StdcallCallConv,
-            CallingConvention.FastCall => LLVMCallConv.LLVMX86FastcallCallConv,
+            default:
+            {
+                Console.WriteLine($"internal compiler error: invalid calling convention value {function.FunctionSymbol.Type!.CallingConvention}");
+                Environment.Exit(1);
+                return default;
+            }
+        }
 
-            _ => throw new NotImplementedException(),
-        }));
+        SetFunctionCallConv(llvmFunctionValue, (uint)llvmCallConv);
 
         return llvmFunctionValue;
     }
@@ -238,7 +279,12 @@ internal sealed class LlvmBackend : IBackend
         {
             case LayeCst.BlockFunctionBody block: CompileBlock(builder, block.BodyBlock); break;
 
-            default: throw new NotImplementedException();
+            default:
+            {
+                Console.WriteLine($"internal compiler error: unhandled function block in LLVM backend {function.Body.GetType().Name}");
+                Environment.Exit(1);
+                return;
+            }
         }
 
         builder.BuildReturnVoid();
@@ -268,7 +314,12 @@ internal sealed class LlvmBackend : IBackend
 
             case LayeCst.ExpressionStatement exprStmt: CompileExpression(builder, exprStmt.Expression); break;
 
-            default: throw new NotImplementedException();
+            default:
+            {
+                Console.WriteLine($"internal compiler error: unhandled statement in LLVM backend {statement.GetType().Name}");
+                Environment.Exit(1);
+                return;
+            }
         }
     }
 
@@ -330,7 +381,9 @@ internal sealed class LlvmBackend : IBackend
                     } break;
                 }
 
-                throw new NotImplementedException();
+                Console.WriteLine($"internal compiler error: unhandled type cast in LLVM backend ({typeCast.Expression.Type} to {typeCast.Type})");
+                Environment.Exit(1);
+                return default!;
             }
 
             case LayeCst.InvokeFunction invokeFunction:
@@ -342,7 +395,12 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildCall(invokeFunction.TargetFunctionSymbol, args);
             }
 
-            default: throw new NotImplementedException();
+            default:
+            {
+                Console.WriteLine($"internal compiler error: unhandled expression in LLVM backend ({expression.GetType().Name})");
+                Environment.Exit(1);
+                return default!;
+            }
         }
     }
 }

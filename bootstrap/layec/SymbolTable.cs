@@ -150,18 +150,11 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Buffer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("buffer");
     public sealed record class Slice(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("slice");
 
-    public sealed record class Function(string Name, TypeParam[] TypeParams, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs) : SymbolType($"function {Name}");
-    public sealed record class Struct(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
-    public sealed record class Union(string Name, TypeParam[] TypeParams, (SymbolType Type, string Name)[] Variants) : SymbolType(Name);
+    public sealed record class Function(string Name, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs) : SymbolType($"function {Name}");
+    public sealed record class FunctionPointer(CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs) : SymbolType($"function pointer");
+    public sealed record class Struct(string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
+    public sealed record class Union(string Name, (SymbolType Type, string Name)[] Variants) : SymbolType(Name);
     public sealed record class Enum(string Name, (string Name, uint Value)[] Variants) : SymbolType(Name);
 
     public sealed override string ToString() => Name;
-}
-
-internal abstract record class TypeParam(string Name)
-{
-    // e.g. vec2<T>
-    public sealed record class TypeName(string Name) : TypeParam(Name);
-    // e.g. vec<uint N>
-    public sealed record class Constant(SymbolType ConstantType, string Name) : TypeParam(Name);
 }

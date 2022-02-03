@@ -5,8 +5,17 @@ public readonly struct SourceSpan : IEquatable<SourceSpan>, IComparable<SourceSp
     public static bool operator ==(SourceSpan left, SourceSpan right) =>  left.Equals(right);
     public static bool operator !=(SourceSpan left, SourceSpan right) => !left.Equals(right);
 
-    public static SourceSpan Combine(SourceSpan start, SourceSpan end) => new(start.StartLocation, end.EndLocation);
-    public static SourceSpan Combine(IHasSourceSpan start, IHasSourceSpan end) => new(start.SourceSpan.StartLocation, end.SourceSpan.EndLocation);
+    public static SourceSpan Combine(SourceSpan start, SourceSpan end)
+    {
+        if (start == Invalid)
+            return end;
+        else if (end == Invalid)
+            return start;
+
+        return new(start.StartLocation, end.EndLocation);
+    }
+
+    public static SourceSpan Combine(IHasSourceSpan start, IHasSourceSpan end) => Combine(start.SourceSpan, end.SourceSpan);
     public static SourceSpan Combine(params IHasSourceSpan?[] values)
     {
         var spans = values.Where(s => s is not null && s.SourceSpan != Invalid).Cast<IHasSourceSpan>();
