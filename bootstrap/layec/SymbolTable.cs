@@ -143,6 +143,7 @@ internal abstract record class SymbolType(string Name)
     public sealed record class SizedFloat(uint BitCount) : SymbolType($"f{BitCount}");
 
     public sealed record class UntypedString() : SymbolType("untyped string");
+    public sealed record class String() : SymbolType("string");
 
     public sealed record class RawPtr() : SymbolType("rawptr");
     public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType("array");

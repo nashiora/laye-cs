@@ -330,6 +330,11 @@ internal sealed class LayeParser
             type = new LayeAst.BuiltInType(boolKw);
             Advance();
         }
+        else if (CheckKeyword(Keyword.String, out var stringKw))
+        {
+            type = new LayeAst.BuiltInType(stringKw);
+            Advance();
+        }
         else if (CheckKeyword(Keyword.RawPtr, out var rawptrKw))
         {
             type = new LayeAst.BuiltInType(rawptrKw);
@@ -759,6 +764,31 @@ internal sealed class LayeParser
 
     private LayeAst.Stmt? ReadStatement()
     {
+        if (CheckKeyword(Keyword.Return, out var returnKw))
+        {
+            Advance(); // `return`
+
+            LayeAst.Expr? returnValue = null;
+            if (!CheckDelimiter(Delimiter.SemiColon))
+            {
+                returnValue = ReadExpression();
+                if (returnValue is null)
+                {
+                    AssertHasErrors("reading return value");
+                    return null;
+                }
+
+                if (!ExpectDelimiter(Delimiter.SemiColon, out _))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to close return"));
+                    return null;
+                }
+            }
+            else Advance(); // `;`
+
+            return new LayeAst.Return(returnKw, returnValue);
+        }
+
         int startPosition = m_tokenIndex;
         if (TryReadTypeNode(false) is { } bindingType)
         {

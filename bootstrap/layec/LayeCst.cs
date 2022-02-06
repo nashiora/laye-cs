@@ -48,6 +48,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ExpressionStatement(Expr Expression) : Stmt(Expression.SourceSpan);
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
+    public sealed record class DeadCode(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
 
     public sealed record class BindingDeclaration(LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
         : Stmt(SourceSpan.Combine(new IHasSourceSpan?[] { BindingName, Expression }));
@@ -60,5 +61,18 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, LayeToken.Identifier FunctionName, Symbol.Function FunctionSymbol, FunctionBody Body)
         : Stmt(FunctionName.SourceSpan);
 
+    public sealed record class Return(SourceSpan SourceSpan, Expr? ReturnValue)
+        : Stmt(SourceSpan);
+
     #endregion
+}
+
+internal static class LayeCstExtensions
+{
+    public static bool CheckReturns(this LayeCst.Stmt node) => node switch
+    {
+        LayeCst.Return => true,
+        LayeCst.Block block => block.Body.Any(child => child.CheckReturns()),
+        _ => false,
+    };
 }

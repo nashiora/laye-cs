@@ -15,7 +15,7 @@ public readonly struct SourceSpan : IEquatable<SourceSpan>, IComparable<SourceSp
         return new(start.StartLocation, end.EndLocation);
     }
 
-    public static SourceSpan Combine(IHasSourceSpan start, IHasSourceSpan end) => Combine(start.SourceSpan, end.SourceSpan);
+    //public static SourceSpan Combine(IHasSourceSpan start, IHasSourceSpan end) => Combine(start.SourceSpan, end.SourceSpan);
     public static SourceSpan Combine(params IHasSourceSpan?[] values)
     {
         var spans = values.Where(s => s is not null && s.SourceSpan != Invalid).Cast<IHasSourceSpan>();

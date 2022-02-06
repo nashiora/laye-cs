@@ -11,7 +11,7 @@ internal enum Backend
 
 internal interface IBackend
 {
-    void Compile(LayeCstRoot[] roots, BackendOptions options);
+    int Compile(LayeCstRoot[] roots, BackendOptions options);
 }
 
 internal sealed class BackendOptions

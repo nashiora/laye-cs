@@ -18,6 +18,8 @@ void test()
 void nocontext test_nocontext()
 {
     printf("test (without context)%c", 10);
+    return;
+    printf("this will never run%c", 10);
 }
 
 void main()

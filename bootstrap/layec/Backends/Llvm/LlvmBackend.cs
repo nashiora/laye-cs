@@ -3,6 +3,8 @@
 using LLVMSharp;
 using static LLVMSharp.LLVM;
 
+using static CompilerStatus;
+
 namespace laye.Backends.Llvm;
 
 internal sealed class LlvmBackend : IBackend
@@ -17,7 +19,10 @@ internal sealed class LlvmBackend : IBackend
     public readonly SymbolType.SizedInteger Int64Type = new(true, 64);
     public readonly SymbolType.SizedInteger UInt64Type = new(false, 64);
 
+    public readonly SymbolType.String StringType = new();
+
     public readonly SymbolType.Pointer U8PtrType = new(new SymbolType.SizedInteger(false, 8));
+    public readonly SymbolType.Buffer ReadOnlyU8BufType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
     public readonly SymbolType.Slice U8SlcType = new(new SymbolType.SizedInteger(false, 8));
     public readonly SymbolType.Slice ReadOnlyU8SlcType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
 
@@ -25,13 +30,18 @@ internal sealed class LlvmBackend : IBackend
 
     private readonly HashSet<string> m_externLibraryReferences = new();
 
-    public void Compile(LayeCstRoot[] roots, BackendOptions options)
+    public int Compile(LayeCstRoot[] roots, BackendOptions options)
     {
+        ShowInfo("Compiling using LLVM backend");
+
+        var irCompilerTimer = Stopwatch.StartNew();
+
         string lmoduleName = Path.GetFileNameWithoutExtension(options.OutputFileName);
 
         Context = ContextCreate();
         Module = ModuleCreateWithNameInContext(lmoduleName, Context);
 
+        ShowVerbose("Declaring LLVM functions");
         foreach (var root in roots)
         {
             foreach (var node in root.TopLevelNodes)
@@ -45,6 +55,7 @@ internal sealed class LlvmBackend : IBackend
             }
         }
 
+        ShowVerbose("Compiling functions to LLVM IR");
         foreach (var root in roots)
         {
             foreach (var node in root.TopLevelNodes)
@@ -59,6 +70,15 @@ internal sealed class LlvmBackend : IBackend
             }
         }
 
+        irCompilerTimer.Stop();
+
+        var irCompilerElapsedTime = irCompilerTimer.Elapsed;
+        ShowInfo($"Compiled to LLVM IR in {irCompilerElapsedTime.TotalSeconds:N2}s");
+
+        ShowVerbose("Writing IR and bitcode to temporary files");
+
+        var tempFileWriterTimer = Stopwatch.StartNew();
+
         //if (moduleParams.Kind == ModuleKind.Console || moduleParams.Kind == ModuleKind.Windows)
         //Debug.Assert(asmDef.EntryPoint is not null, "no program entry point specified for executable, program checker failed");
 
@@ -69,20 +89,27 @@ internal sealed class LlvmBackend : IBackend
         if (printResult.Value != 0)
         {
             Console.WriteLine(printError);
-            Environment.Exit(1);
-            return;
+            return 1;
         }
 
         int bcWriteResult = WriteBitcodeToFile(Module, bcFileName);
         if (bcWriteResult != 0)
         {
             Console.WriteLine("Failed to generate LLVM bitcode file.");
-            Environment.Exit(1);
-            return;
+            return 1;
         }
+
+        tempFileWriterTimer.Stop();
+
+        var tempFileWriterElapsedTime = tempFileWriterTimer.Elapsed;
+        ShowVerbose($"Wrote temp files in {tempFileWriterElapsedTime.TotalSeconds:N2}s");
 
         string outFileName = options.OutputFileName;
         //outFileName = Path.ChangeExtension(outFileName, ".o");
+
+        ShowInfo($"Generating output file `{outFileName}` with clang");
+
+        var outFileWriterTimer = Stopwatch.StartNew();
 
         IEnumerable<string> filesToLinkAgainst = options.FilesToLinkAgainst.Concat(m_externLibraryReferences.Select(ex => $"-l{ex}"));
 
@@ -90,7 +117,7 @@ internal sealed class LlvmBackend : IBackend
         string additionalFiles = string.Join(" ", filesToLinkAgainst.Select(f => $"\"{f}\""));
         string clangArguments = $"-target {options.TargetTriple} \"{bcFileName}\" {additionalFiles} -g -v \"-o{outFileName}\"";
         if (options.IsExecutable)
-            ;// clangArguments += " -Wl,-ENTRY:_laye_start";
+        { }// clangArguments += " -Wl,-ENTRY:_laye_start";
         else clangArguments += " -shared -fuse-ld=llvm-lib";
 
         if (options.AdditionalArguments.Length > 0)
@@ -98,6 +125,8 @@ internal sealed class LlvmBackend : IBackend
             string additionalArguments = string.Join(" ", options.AdditionalArguments.Select(a => $"\"{a}\""));
             clangArguments += $" {additionalArguments}";
         }
+
+        ShowCommand($"clang {clangArguments}");
 
         var clangProcessStartInfo = new ProcessStartInfo()
         {
@@ -133,8 +162,16 @@ internal sealed class LlvmBackend : IBackend
             if (File.Exists(pdbFileName)) File.Delete(pdbFileName);
         }
 
-        int exitCode = clangProcess.ExitCode;
-        Environment.Exit(exitCode);
+        outFileWriterTimer.Stop();
+
+        if (clangProcess.ExitCode == 0)
+        {
+            var outFileWriterElapsedTime = outFileWriterTimer.Elapsed;
+            ShowInfo($"Generated output file in {outFileWriterElapsedTime.TotalSeconds:N2}s");
+        }
+        else ShowInfo($"Failed to generate output file (clang exited with code {clangProcess.ExitCode})");
+
+        return clangProcess.ExitCode;
     }
 
     public LLVMValueRef GetFunctionValueFromSymbol(Symbol.Function function) => m_functions[function];
@@ -181,6 +218,8 @@ internal sealed class LlvmBackend : IBackend
                     return default;
                 }
             }
+
+            case SymbolType.String: return StructTypeInContext(Context, new LLVMTypeRef[] { GetLlvmType(UIntType), PointerType(Int8TypeInContext(Context), 0) }, false);
 
             case SymbolType.RawPtr: return PointerType(Int8TypeInContext(Context), 0);
             case SymbolType.Array array: return ArrayType(GetLlvmType(array.ElementType), array.ElementCount);
@@ -287,7 +326,15 @@ internal sealed class LlvmBackend : IBackend
             }
         }
 
-        builder.BuildReturnVoid();
+        if (function.FunctionSymbol.Type!.ReturnType is SymbolType.Void)
+        {
+            foreach (var block in builder.BasicBlocks)
+            {
+                var lastInsn = GetLastInstruction(block);
+                if (IsABranchInst(lastInsn).Pointer.ToInt32() == 0)
+                    builder.BuildReturnVoid();
+            }
+        }
     }
 
     private void CompileBlock(LlvmFunctionBuilder builder, LayeCst.Block block)
@@ -300,6 +347,8 @@ internal sealed class LlvmBackend : IBackend
     {
         switch (statement)
         {
+            case LayeCst.DeadCode: break; // pass on dead code that we left in the cst
+
             case LayeCst.BindingDeclaration bindingDecl:
             {
                 var bindingAddress = builder.BuildAlloca(bindingDecl.BindingSymbol.Type!, bindingDecl.BindingName.Image);
@@ -309,6 +358,17 @@ internal sealed class LlvmBackend : IBackend
                 {
                     var expressionValue = CompileExpression(builder, expression);
                     builder.BuildStore(expressionValue, bindingAddress);
+                }
+            } break;
+
+            case LayeCst.Return returnStmt:
+            {
+                if (returnStmt.ReturnValue is null)
+                    builder.BuildReturnVoid();
+                else
+                {
+                    var returnValue = CompileExpression(builder, returnStmt.ReturnValue);
+                    builder.BuildReturn(returnValue);
                 }
             } break;
 
@@ -330,7 +390,17 @@ internal sealed class LlvmBackend : IBackend
             case LayeCst.String _string:
             {
                 TypedLlvmValue stringValue;
-                stringValue = builder.BuildGlobalStringPointer(_string.Literal.LiteralValue);
+                if (_string.Type == ReadOnlyU8BufType)
+                    stringValue = builder.BuildGlobalStringBuffer(_string.Literal.LiteralValue);
+                else if (_string.Type is SymbolType.String)
+                    stringValue = builder.BuildGlobalString(_string.Literal.LiteralValue);
+                else
+                {
+                    Console.WriteLine($"internal compiler error: unhandled or invalid string type in LLVM backend ({_string.Type})");
+                    Environment.Exit(1);
+                    return default;
+                }
+
                 return stringValue;
             }
 
@@ -416,6 +486,8 @@ internal sealed class LlvmFunctionBuilder
     private readonly List<LLVMBasicBlockRef> m_blocks = new();
     private int m_currentBlockIndex = -1;
 
+    public IEnumerable<LLVMBasicBlockRef> BasicBlocks => m_blocks;
+
     private readonly Dictionary<Symbol, LlvmValue<SymbolType.Pointer>> m_valueAddresses = new();
 
     public LlvmFunctionBuilder(LlvmBackend backend, LLVMValueRef functionValue, LLVMBuilderRef builder)
@@ -469,10 +541,28 @@ internal sealed class LlvmFunctionBuilder
         return new LlvmValue<TFloatType>(constFloatValue, floatType);
     }
 
-    public LlvmValue<SymbolType.Pointer> BuildGlobalStringPointer(string value, string name = "global_string_pointer")
+    public LlvmValue<SymbolType.Buffer> BuildGlobalStringBuffer(string value, string name = "global_string_buffer")
     {
         var globalStringPtr = BuildGlobalStringPtr(Builder, value, name);
-        return new LlvmValue<SymbolType.Pointer>(globalStringPtr, Backend.U8PtrType);
+        return new LlvmValue<SymbolType.Buffer>(globalStringPtr, Backend.ReadOnlyU8BufType);
+    }
+
+    public LlvmValue<SymbolType.String> BuildGlobalString(string value, string name = "global_string")
+    {
+        ulong stringLength = (ulong)System.Text.Encoding.UTF8.GetByteCount(value);
+
+        var stringStorageAddress = BuildAlloca(Backend.StringType);
+
+        var stringLengthAddress = BuildStructGEP(Builder, stringStorageAddress.Value, 0, "global_string.value.length");
+        var stringLengthValue = ConstInt(Backend.GetLlvmType(Backend.UIntType), stringLength, false);
+        LLVM.BuildStore(Builder, stringLengthValue, stringLengthAddress);
+
+        var stringPointerAddress = BuildStructGEP(Builder, stringStorageAddress.Value, 1, "global_string.value.pointer");
+        var globalStringPtr = BuildGlobalStringPtr(Builder, value, name);
+        LLVM.BuildStore(Builder, globalStringPtr, stringPointerAddress);
+
+        var stringStorageValue = LLVM.BuildLoad(Builder, stringStorageAddress.Value, "global_string.value");
+        return new LlvmValue<SymbolType.String>(stringStorageValue, Backend.StringType);
     }
 
 #if false
@@ -541,6 +631,17 @@ internal sealed class LlvmFunctionBuilder
             return new LlvmValueVoid();
 
         return new TypedLlvmValue(functionResult, functionSymbol.Type!.ReturnType);
+    }
+
+    public TypedLlvmValue BuildCall(LlvmValue<SymbolType.FunctionPointer> functionPointer, TypedLlvmValue[] arguments)
+    {
+        var functionValue = LLVM.BuildLoad(Builder, functionPointer.Value, "load.fnptr");
+        var functionResult = LLVM.BuildCall(Builder, functionValue, arguments.Select(a => a.Value).ToArray(), "");
+
+        if (functionPointer.Type!.ReturnType is SymbolType.Void)
+            return new LlvmValueVoid();
+
+        return new TypedLlvmValue(functionResult, functionPointer.Type!.ReturnType);
     }
 
     public LlvmValue<SymbolType.Pointer> BuildIntToPointerCast(TypedLlvmValue value, SymbolType.Pointer pointerType)

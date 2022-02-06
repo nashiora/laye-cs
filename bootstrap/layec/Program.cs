@@ -1,9 +1,13 @@
 ﻿#define NO_DEFAULT_SOURCE_DIRECTORY // if we allow `./` as the default target, we shouldn't print help text on no arguments given. This flag controls wether or not `layec` prints help text when no arguments are passed
 
+using System.Diagnostics;
+
 using laye;
 using laye.Backends;
 using laye.Backends.Llvm;
 using laye.Compiler;
+
+using static CompilerStatus;
 
 var cmdParser = new CommandLine.Parser(config =>
 {
@@ -29,18 +33,26 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         return 0;
     }
 
+    Arguments = args;
+
     string inDir = args.SourcePath;
     bool inDirRecurse = !args.NoRecursiveSourceDirectory;
 
     string[] sourceFiles = GetSourceFilesInDirectory(inDir, inDirRecurse).ToArray();
-    // Console.WriteLine(string.Join(Environment.NewLine, sourceFiles));
+
+    if (inDirRecurse)
+        ShowInfo($"Compiling {sourceFiles.Length} .ly files in `{inDir}` recursively");
+    else ShowInfo($"Compiling {sourceFiles.Length} .ly files in `{inDir}` at top-level only");
 
     var diagnostics = new List<Diagnostic>();
     var sourceSyntaxes = new Dictionary<string, LayeAstRoot>();
     var globalSymbols = new SymbolTable();
 
+    var parsingTimer = Stopwatch.StartNew();
     foreach (string sourceFile in sourceFiles)
     {
+        ShowVerbose($"Parsing `{sourceFile}`");
+
         var sourceSyntax = LayeParser.ParseSyntaxFromFile(sourceFile, diagnostics);
         sourceSyntaxes[sourceFile] = new(sourceSyntax);
 
@@ -51,26 +63,42 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         }
     }
 
+    parsingTimer.Stop();
+
     if (diagnostics.Any(d => d is Diagnostic.Error))
     {
+        ShowInfo("Parsing failed");
         PrintDiagnostics(diagnostics);
         return 1;
     }
+
+    var elapsedParsingTime = parsingTimer.Elapsed;
+    ShowInfo($"Parsing took {elapsedParsingTime.TotalSeconds:N2}s");
+
+    var checkingTimer = Stopwatch.StartNew();
+    ShowInfo($"Checking program semantics");
 
     var cstRoots = LayeChecker.CheckSyntax(sourceSyntaxes.Values.ToArray(), globalSymbols, diagnostics);
 
+    checkingTimer.Stop();
+
     if (cstRoots.Length != sourceSyntaxes.Count || diagnostics.Any(d => d is Diagnostic.Error))
     {
+        ShowInfo("Checking failed");
         PrintDiagnostics(diagnostics);
         return 1;
     }
-
-    IBackend backend;
-    switch (args.Backend)
+    else
     {
-        case Backend.Llvm: backend = new LlvmBackend(); break;
-        default: throw new NotImplementedException();
+        var elapsedCheckingTime = checkingTimer.Elapsed;
+        ShowInfo($"Semantic analysis took {elapsedCheckingTime.TotalSeconds:N2}s");
     }
+
+    IBackend backend = args.Backend switch
+    {
+        Backend.Llvm => new LlvmBackend(),
+        _ => throw new NotImplementedException(),
+    };
 
     var backendOptions = new BackendOptions()
     {
@@ -79,25 +107,32 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         ShowBackendOutput = args.ShowBackendOutput,
     };
 
-    backend.Compile(cstRoots, backendOptions);
-
-    if (diagnostics.Any(d => d is Diagnostic.Error))
-    {
-        PrintDiagnostics(diagnostics);
-        return 1;
-    }
+    int returnCode = backend.Compile(cstRoots, backendOptions);
+    if (!args.QuietOutput || args.ShowBackendOutput)
+        Console.WriteLine();
 
     PrintDiagnostics(diagnostics);
-    return 0;
+    return returnCode;
 }
 
 static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics)
 {
     foreach (Diagnostic diagnostic in diagnostics)
     {
-        Console.Write($"{diagnostic.SourceSpan}: ");
         if (diagnostic is Diagnostic.Error)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
             Console.Write("error: ");
+        }
+        else if (diagnostic is Diagnostic.Warning)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("warning: ");
+        }
+
+        Console.ForegroundColor = ConsoleColor.Gray;
+        Console.Write($"{diagnostic.SourceSpan}: ");
+        Console.ForegroundColor = ConsoleColor.White;
         Console.WriteLine(diagnostic.Message);
     }
 }
@@ -142,6 +177,12 @@ sealed class ProgramArgs
     [CommandLine.Option('o', "output", Default = "./output.exe", HelpText = "The output file path.")]
     public string OutputFileName { get; set; } = "./output.exe";
 
+    [CommandLine.Option('q', "quiet", Default = false, HelpText = "Disables printing compiler stages and timings to the console.")]
+    public bool QuietOutput { get; set; } = false;
+
+    [CommandLine.Option('v', "verbose", Default = false, HelpText = "Enabler printing additional compiler stage messages to the console. This flag is ignored if --quite is provided.")]
+    public bool VerboseOutput { get; set; } = false;
+
     [CommandLine.Option("no-recursive-source", Default = false, HelpText = "Disables recursive directory searching when compiling a source directory.")]
     public bool NoRecursiveSourceDirectory { get; set; } = false;
 
@@ -159,4 +200,35 @@ sealed class ProgramArgs
 
     [CommandLine.Option("print-syntax", Default = false, HelpText = "Pretty-print syntax trees as they are parsed.")]
     public bool PrintSyntaxTrees { get; set; } = false;
+}
+
+internal static class CompilerStatus
+{
+    public static ProgramArgs Arguments = default!;
+
+    public static void ShowVerbose(string message)
+    {
+        if (Arguments.QuietOutput) return;
+        if (!Arguments.VerboseOutput) return;
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.Write("[VERBOSE] ");
+        Console.WriteLine(message);
+    }
+
+    public static void ShowInfo(string message)
+    {
+        if (Arguments.QuietOutput) return;
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.Write("[INFO] ");
+        Console.WriteLine(message);
+    }
+
+    public static void ShowCommand(string message)
+    {
+        if (Arguments.QuietOutput) return;
+        Console.ForegroundColor = ConsoleColor.Gray;
+        Console.Write("[CMD] ");
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine(message);
+    }
 }

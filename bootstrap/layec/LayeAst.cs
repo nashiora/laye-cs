@@ -233,8 +233,8 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
         ParamData[] Parameters, LayeToken.Delimiter[] ParameterSeparators, LayeToken.Keyword? VarargsKeyword, VarArgsKind VarArgsKind, LayeToken.Delimiter CloseParams, FunctionBody Body)
         : Stmt(SourceSpan.Combine(Modifiers, ReturnType, Body));
 
-    public sealed record class Return(LayeToken.Keyword ReturnKeyword, Expr? ReturnValue, LayeToken.Delimiter SemiColon)
-        : Stmt(new SourceSpan(ReturnKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
+    public sealed record class Return(LayeToken.Keyword ReturnKeyword, Expr? ReturnValue)
+        : Stmt(SourceSpan.Combine(ReturnKeyword, ReturnValue));
     public sealed record class Break(LayeToken.Keyword BreakKeyword, Expr? BreakValue, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(BreakKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
     public sealed record class Continue(LayeToken.Keyword ContinueKeyword, LayeToken.Delimiter SemiColon)

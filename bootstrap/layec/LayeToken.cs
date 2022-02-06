@@ -89,6 +89,8 @@ internal enum Keyword
     Rune,
 
     RawPtr,
+
+    String,
     
     NoReturn,
     Dynamic,

@@ -248,6 +248,7 @@ internal sealed class LayeChecker
                     case Keyword.SizedFloat: return new SymbolType.SizedFloat(kw.SizeData);
 
                     case Keyword.RawPtr: return new SymbolType.RawPtr();
+                    case Keyword.String: return new SymbolType.String();
 
                     default:
                     {
@@ -414,6 +415,51 @@ internal sealed class LayeChecker
                 return new LayeCst.BindingDeclaration(bindingDecl.Name, bindingSymbol, expression);
             }
 
+            case LayeAst.Return returnStmt:
+            {
+                LayeCst.Expr? returnExpr = null;
+                if (returnStmt.ReturnValue is { } expr)
+                {
+                    returnExpr = CheckExpression(expr);
+                    if (returnExpr is null)
+                    {
+                        AssertHasErrors("checking return value");
+                        return null;
+                    }
+                }
+
+                var function = CurrentScope.FunctionSymbol;
+                
+                Debug.Assert(function is not null);
+                Debug.Assert(function.Type is not null);
+
+                if (returnExpr is not null)
+                {
+                    if (function.Type!.ReturnType is SymbolType.Void)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "cannot return a value as the function returns void"));
+                        return null;
+                    }
+
+                    returnExpr = CheckImplicitTypeCast(returnExpr, function.Type.ReturnType);
+                    if (returnExpr is null)
+                    {
+                        AssertHasErrors("checking return type implicit cast");
+                        return null;
+                    }
+                }
+                else
+                {
+                    if (function.Type!.ReturnType is not SymbolType.Void)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "must return a value as the function does not return void"));
+                        return null;
+                    }
+                }
+
+                return new LayeCst.Return(returnStmt.SourceSpan, returnExpr);
+            }
+
             case LayeAst.ExpressionStatement exprStmt:
             {
                 var expr = CheckExpression(exprStmt.Expression);
@@ -440,6 +486,10 @@ internal sealed class LayeChecker
         PushScope(blockScope);
 
         var bodyNodes = new List<LayeCst.Stmt>();
+
+        bool isInDeadCodeMode = false;
+        var deadNodes = new List<LayeCst.Stmt>();
+
         foreach (var node in block.Body)
         {
             var cstNode = CheckStatement(node);
@@ -449,10 +499,25 @@ internal sealed class LayeChecker
                 return null;
             }
 
-            bodyNodes.Add(cstNode);
+            if (isInDeadCodeMode)
+                deadNodes.Add(cstNode);
+            else
+            {
+                bodyNodes.Add(cstNode);
+                isInDeadCodeMode = cstNode.CheckReturns();
+            }
         }
 
         PopScope();
+
+        if (isInDeadCodeMode && deadNodes.Count > 0)
+        {
+            var deadNodesArr = deadNodes.ToArray();
+            var deadNode = new LayeCst.DeadCode(SourceSpan.Combine(deadNodesArr), deadNodesArr);
+            bodyNodes.Add(deadNode);
+
+            m_diagnostics.Add(new Diagnostic.Warning(deadNode.SourceSpan, "unreachable code"));
+        }
 
         return new LayeCst.Block(block.SourceSpan, bodyNodes.ToArray());
     }
@@ -630,6 +695,11 @@ internal sealed class LayeChecker
                 {
                     if (value is LayeCst.String _string)
                         return new LayeCst.String(_string.Literal, _targetBufferType);
+                }
+                else if (targetType is SymbolType.String _targetStringType)
+                {
+                    if (value is LayeCst.String _string)
+                        return new LayeCst.String(_string.Literal, _targetStringType);
                 }
             } break;
 

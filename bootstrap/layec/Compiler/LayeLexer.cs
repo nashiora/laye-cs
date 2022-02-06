@@ -392,6 +392,7 @@ internal sealed class LayeLexer
             case "rune": return new LayeToken.Keyword(span, Keyword.Rune);
 
             case "rawptr": return new LayeToken.Keyword(span, Keyword.RawPtr);
+            case "string": return new LayeToken.Keyword(span, Keyword.String);
             case "noreturn": return new LayeToken.Keyword(span, Keyword.NoReturn);
             case "dynamic": return new LayeToken.Keyword(span, Keyword.Dynamic);
 
