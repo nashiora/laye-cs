@@ -1,4 +1,4 @@
-extern "C" i32 printf(u8 readonly [*]format, varargs);
+extern "C" i32 cdecl printf(u8 readonly[*] format, varargs);
 
 void main()
 {

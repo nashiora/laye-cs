@@ -18,16 +18,21 @@ void test()
 void nocontext test_nocontext()
 {
     printf("test (without context)%c", 10);
-    return;
-    printf("this will never run%c", 10);
 }
 
 void main()
 {
     __laye_context lcontext;
 
-    u8 [*]cmdarg = GetCommandLineA();
+    string testString = "Hello, hunter!";
+    uint stringLength = testString.length;
+    printf("stringLength = %llu%c", stringLength, 10);
+
+    u8[*] cmdarg = GetCommandLineA();
     printf("%s%c", cmdarg, 10);
+
+    uint cmdargLength = strlen(cmdarg);
+    //u8[] cmdargSlice = cmdarg[cmdargLength];
 
     test();
     test_nocontext();

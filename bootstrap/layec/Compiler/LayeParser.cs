@@ -936,7 +936,19 @@ internal sealed class LayeParser
 
     private LayeAst.Expr? ReadPrimaryExpressionSuffix(LayeAst.Expr primary)
     {
-        if (CheckDelimiter(Delimiter.OpenParen, out var openInvoke))
+        if (CheckDelimiter(Delimiter.Dot))
+        {
+            Advance(); // `.`
+
+            if (!ExpectIdentifier(out var indexName))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as field index"));
+                return null;
+            }
+
+            return ReadPrimaryExpressionSuffix(new LayeAst.NamedIndex(primary, indexName));
+        }
+        else if (CheckDelimiter(Delimiter.OpenParen, out var openInvoke))
         {
             Advance(); // `(`
 

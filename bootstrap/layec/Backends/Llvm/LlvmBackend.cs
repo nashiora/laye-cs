@@ -12,8 +12,8 @@ internal sealed class LlvmBackend : IBackend
     public LLVMContextRef Context;
     public LLVMModuleRef Module;
 
-    public readonly SymbolType.Integer IntType = new(false);
-    public readonly SymbolType.Integer UIntType = new(true);
+    public readonly SymbolType.Integer IntType = new(true);
+    public readonly SymbolType.Integer UIntType = new(false);
 
     public readonly SymbolType.SizedInteger Int32Type = new(true, 32);
     public readonly SymbolType.SizedInteger Int64Type = new(true, 64);
@@ -417,6 +417,15 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoad(address, load.Symbol.Name);
             }
 
+            case LayeCst.StringLengthLookup stringLengthLookup:
+            {
+                // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
+                var stringValue = CompileExpression(builder, stringLengthLookup.TargetExpression);
+                var stringStorageAddress = builder.BuildAlloca(StringType, "string_tempstorage");
+                builder.BuildStore(stringValue, stringStorageAddress);
+                return builder.BuildLoadStringLengthFromAddress(stringStorageAddress);
+            }
+
             case LayeCst.TypeCast typeCast:
             {
                 var targetValue = CompileExpression(builder, typeCast.Expression);
@@ -607,8 +616,14 @@ internal sealed class LlvmFunctionBuilder
 
     public void BuildStore(TypedLlvmValue value, LlvmValue<SymbolType.Pointer> address)
     {
-        Debug.Assert(value.Type == address.Type.ElementType, "type checker did not ensure value and address types were the same");
+        Debug.Assert(value.Type == address.Type.ElementType, $"type checker did not ensure value and address types were the same ({value.Type} != {address.Type.ElementType})");
         LLVM.BuildStore(Builder, value.Value, address.Value);
+    }
+
+    public LlvmValue<SymbolType.Integer> BuildLoadStringLengthFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)
+    {
+        var lengthAddress = BuildStructGEP(Builder, stringAddress.Value, 0, "string.length.addr");
+        return new(LLVM.BuildLoad(Builder, lengthAddress, "string.length"), Backend.UIntType);
     }
 
     public void BuildBranch(LLVMBasicBlockRef block)

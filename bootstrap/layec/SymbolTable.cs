@@ -1,4 +1,6 @@
-﻿namespace laye;
+﻿using System.Text;
+
+namespace laye;
 
 internal sealed class SymbolTable
 {
@@ -130,32 +132,74 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Void() : SymbolType("void");
     public sealed record class Rune() : SymbolType("rune");
 
-    public sealed record class UntypedBool() : SymbolType("untyped bool");
+    public sealed record class UntypedBool() : SymbolType("<untyped bool>");
     public sealed record class Bool() : SymbolType("bool");
     public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 
-    public sealed record class UntypedInteger(bool Signed) : SymbolType("untyped int");
+    public sealed record class UntypedInteger(bool Signed) : SymbolType("<untyped int>");
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
     public sealed record class SizedInteger(bool Signed, uint BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
 
-    public sealed record class UntypedFloat() : SymbolType("untyped float");
+    public sealed record class UntypedFloat() : SymbolType("<untyped float>");
     public sealed record class Float() : SymbolType("float");
     public sealed record class SizedFloat(uint BitCount) : SymbolType($"f{BitCount}");
 
-    public sealed record class UntypedString() : SymbolType("untyped string");
+    public sealed record class UntypedString() : SymbolType("<untyped string>");
     public sealed record class String() : SymbolType("string");
 
     public sealed record class RawPtr() : SymbolType("rawptr");
-    public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType("array");
-    public sealed record class Pointer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("pointer");
-    public sealed record class Buffer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("buffer");
-    public sealed record class Slice(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType("slice");
+    public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType($"{ElementType}{(ReadOnly ? " readonly" : "")}[{ElementCount}]");
+    public sealed record class Pointer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}*");
+    public sealed record class Buffer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}[*]");
+    public sealed record class Slice(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}[]");
 
-    public sealed record class Function(string Name, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs) : SymbolType($"function {Name}");
-    public sealed record class FunctionPointer(CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs) : SymbolType($"function pointer");
+    public sealed record class Function(string Name, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs)
+        : SymbolType(FunctionTypeToString(Name, CallingConvention, ReturnType, Parameters.Select(p => $"{p.Type} {p.Name}").ToArray(), VarArgs));
+    public sealed record class FunctionPointer(CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs)
+        : SymbolType(FunctionTypeToString(null, CallingConvention, ReturnType, ParameterTypes.Select(p => p.Name).ToArray(), VarArgs));
     public sealed record class Struct(string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
     public sealed record class Union(string Name, (SymbolType Type, string Name)[] Variants) : SymbolType(Name);
     public sealed record class Enum(string Name, (string Name, uint Value)[] Variants) : SymbolType(Name);
 
     public sealed override string ToString() => Name;
+
+    private static string FunctionTypeToString(string? name, CallingConvention callingConvention, SymbolType returnType, string[] parameters, VarArgsKind varArgs)
+    {
+        var builder = new StringBuilder();
+        builder.Append(returnType);
+
+        if (callingConvention != CallingConvention.Laye)
+        {
+            builder.Append(' ');
+            builder.Append(callingConvention.ToString().ToLower());
+        }
+
+        if (name is not null)
+        {
+            builder.Append(' ');
+            builder.Append(name);
+        }
+
+        builder.Append('(');
+
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            if (i > 0) builder.Append(", ");
+            if (i == parameters.Length - 1 && varArgs == VarArgsKind.Laye)
+                builder.Append("varargs ");
+
+            builder.Append(parameters[i]);
+        }
+
+        if (varArgs == VarArgsKind.C)
+        {
+            if (parameters.Length > 0)
+                builder.Append(", ");
+            builder.Append("varargs");
+        }
+
+        builder.Append(')');
+
+        return builder.ToString();
+    }
 }

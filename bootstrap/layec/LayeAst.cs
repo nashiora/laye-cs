@@ -187,8 +187,8 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan);
 
     public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan);
-
     public sealed record class PathLookup(PathPart Path) : Expr(Path.SourceSpan);
+    public sealed record class NamedIndex(Expr TargetExpression, LayeToken.Identifier Name) : Expr(SourceSpan.Combine(TargetExpression, Name));
 
     public sealed record class GroupedExpression(LayeToken.Delimiter OpenGroup, Expr Expression, LayeToken.Delimiter CloseGroup)
         : Expr(new SourceSpan(OpenGroup.SourceSpan.StartLocation, CloseGroup.SourceSpan.EndLocation));

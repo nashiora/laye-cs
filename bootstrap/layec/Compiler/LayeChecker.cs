@@ -538,11 +538,39 @@ internal sealed class LayeChecker
                 var symbol = CurrentScope.LookupSymbol(nameLookupExpr.Name.Image);
                 if (symbol is null)
                 {
-                    m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, $"the name `{nameLookupExpr.Name.Image}` does not exist in the current context"));
+                    m_diagnostics.Add(new Diagnostic.Error(nameLookupExpr.Name.SourceSpan, $"the name `{nameLookupExpr.Name.Image}` does not exist in the current context"));
                     return null;
                 }
 
                 return new LayeCst.LoadValue(nameLookupExpr.SourceSpan, symbol);
+            }
+
+            case LayeAst.NamedIndex namedIndexExpr:
+            {
+                var target = CheckExpression(namedIndexExpr.TargetExpression);
+                if (target is null)
+                {
+                    AssertHasErrors("checking named index target");
+                    return null;
+                }
+
+                switch (target.Type)
+                {
+                    case SymbolType.String:
+                    {
+                        if (namedIndexExpr.Name.Image == "length")
+                            return new LayeCst.StringLengthLookup(namedIndexExpr.SourceSpan, target);
+
+                        m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, $"type `string` does not contain a field named `{namedIndexExpr.Name.Image}`"));
+                        return null;
+                    }
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, $"cannot index type {target.Type}"));
+                        return null;
+                    }
+                }
             }
 
             case LayeAst.Invoke invokeExpr: return CheckInvoke(invokeExpr);
@@ -714,7 +742,7 @@ internal sealed class LayeChecker
 
             case SymbolType.Buffer bufferType:
             {
-                if (targetType is SymbolType.Pointer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
+                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
                 {
                     if (_targetBufferType.Access == AccessKind.ReadOnly)
                         return new LayeCst.TypeCast(value.SourceSpan, value, bufferType);
