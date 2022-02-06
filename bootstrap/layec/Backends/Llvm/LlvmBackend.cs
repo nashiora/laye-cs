@@ -331,7 +331,7 @@ internal sealed class LlvmBackend : IBackend
             foreach (var block in builder.BasicBlocks)
             {
                 var lastInsn = GetLastInstruction(block);
-                if (IsABranchInst(lastInsn).Pointer.ToInt32() == 0)
+                if (IsABranchInst(lastInsn).Pointer.ToInt64() == 0 && IsAReturnInst(lastInsn).Pointer.ToInt64() == 0)
                     builder.BuildReturnVoid();
             }
         }
