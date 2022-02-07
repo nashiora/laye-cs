@@ -1,5 +1,20 @@
 //struct __laye_string { u8 readonly [*]value; }
 
+/*
+u8[*] string_to_cstring(string s)
+{
+    u8 readonly[*] data = s.data;
+
+    u8[*] cstring = malloc(s.length + 1);
+    // u8[*] cstring = context.alloc(s.length + 1);
+    // u8[*] cstring = allocate(s.length + 1); // allocate has a context!
+    memcpy(cstring, data, s.length);
+    cstring[s.length] = 0;
+
+    return cstring;
+}
+*/
+
 string string_concat(string a, string b)
 {
     string_builder builder;

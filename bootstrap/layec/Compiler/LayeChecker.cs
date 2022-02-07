@@ -572,6 +572,8 @@ internal sealed class LayeChecker
                     {
                         if (namedIndexExpr.Name.Image == "length")
                             return new LayeCst.StringLengthLookup(namedIndexExpr.SourceSpan, target);
+                        else if (namedIndexExpr.Name.Image == "data")
+                            return new LayeCst.StringDataLookup(namedIndexExpr.SourceSpan, target);
 
                         m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `string` does not contain a field named `{namedIndexExpr.Name.Image}`"));
                         return null;

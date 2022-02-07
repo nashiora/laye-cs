@@ -26,36 +26,10 @@ rawptr nocontext default_allocator(uint size, rawptr memory)
 }
 */
 
-void test()
-{
-    printf("test (with context)%c", 10);
-}
-
-void nocontext test_nocontext()
-{
-    printf("test (without context)%c", 10);
-}
-
 void main()
 {
     __laye_context lcontext;
 
-    string testString = "Hello, hunter!";
-    uint stringLength = testString.length;
-    printf("stringLength = %llu%c", stringLength, 10);
-
-    u8[*] cmdarg = GetCommandLineA();
-    printf("%s%c", cmdarg, 10);
-
-    uint cmdargLength = strlen(cmdarg);
-    u8[] cmdargSlice = cmdarg[:cmdargLength];
-
-    string cmdargString = cmdargSlice;
-
-    test();
-    test_nocontext();
-
-    //i32 consoleHandle = GetStdHandle(-11);
-    //WriteConsoleA(consoleHandle, "Hello, hunter! from Win32 offscreen", 25, 0, 0);
-    //printf("%c", 10);
+    string args = system_command_line_get();
+    printf("process invoked with the following arguments:%c%.*s%c", 10, args.length, args.data, 10);
 }

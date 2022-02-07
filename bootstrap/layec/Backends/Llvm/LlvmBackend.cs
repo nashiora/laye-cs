@@ -426,6 +426,15 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoadStringLengthFromAddress(stringStorageAddress);
             }
 
+            case LayeCst.StringDataLookup stringDataLookup:
+            {
+                // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
+                var stringValue = CompileExpression(builder, stringDataLookup.TargetExpression);
+                var stringStorageAddress = builder.BuildAlloca(StringType, "string_tempstorage");
+                builder.BuildStore(stringValue, stringStorageAddress);
+                return builder.BuildLoadStringDataFromAddress(stringStorageAddress);
+            }
+
             case LayeCst.Slice slice:
             {
                 var targetValue = CompileExpression(builder, slice.TargetExpression);
@@ -448,6 +457,12 @@ internal sealed class LlvmBackend : IBackend
                         return default!;
                     }
                 }
+            }
+
+            case LayeCst.SliceToString sliceToString:
+            {
+                var targetValue = CompileExpression(builder, sliceToString.SliceExpression);
+                return builder.BuildSliceToString(targetValue);
             }
 
             case LayeCst.TypeCast typeCast:
@@ -650,6 +665,12 @@ internal sealed class LlvmFunctionBuilder
         return new(LLVM.BuildLoad(Builder, lengthAddress, "string.length"), Backend.UIntType);
     }
 
+    public LlvmValue<SymbolType.Buffer> BuildLoadStringDataFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)
+    {
+        var dataAddress = BuildStructGEP(Builder, stringAddress.Value, 1, "string.data.addr");
+        return new(LLVM.BuildLoad(Builder, dataAddress, "string.data"), Backend.ReadOnlyU8BufType);
+    }
+
     public LlvmValue<SymbolType.Slice> BuildSliceFromBuffer(TypedLlvmValue bufferValue, TypedLlvmValue? offset, TypedLlvmValue count)
     {
         Debug.Assert(bufferValue.Type is SymbolType.Buffer);
@@ -675,6 +696,46 @@ internal sealed class LlvmFunctionBuilder
 
         var stringStorageValue = LLVM.BuildLoad(Builder, sliceStorageAddress.Value, "slice_value.value");
         return new LlvmValue<SymbolType.Slice>(stringStorageValue, sliceType);
+    }
+
+    public LlvmValue<SymbolType.String> BuildSliceToString(TypedLlvmValue sliceValue)
+    {
+        Debug.Assert(sliceValue.Type is SymbolType.Slice);
+
+        var sliceStorageAddress = BuildAlloca(sliceValue.Type);
+        var stringStorageAddress = BuildAlloca(Backend.StringType);
+
+        LLVM.BuildStore(Builder, sliceValue.Value, sliceStorageAddress.Value);
+
+        var sliceLengthAddress = BuildStructGEP(Builder, sliceStorageAddress.Value, 0, "slice_to_string.slice_length_pointer");
+        var sliceLengthValue = LLVM.BuildLoad(Builder, sliceLengthAddress, "slice_to_string.slice_length");
+
+        var sliceValueAddress = BuildStructGEP(Builder, sliceStorageAddress.Value, 1, "slice_to_string.slice_value_pointer");
+        var sliceValueValue = LLVM.BuildLoad(Builder, sliceValueAddress, "slice_to_string.slice_value");
+
+        var stringLengthAddress = BuildStructGEP(Builder, stringStorageAddress.Value, 0, "slice_to_string.value.length");
+        LLVM.BuildStore(Builder, sliceLengthValue, stringLengthAddress);
+
+        var stringPointerAddress = BuildStructGEP(Builder, stringStorageAddress.Value, 1, "slice_to_string.value.pointer");
+        var stringPointerValue = BuildMallocRaw(sliceLengthValue);
+        BuildMemCpyRaw(stringPointerValue, sliceValueValue, sliceLengthValue);
+        LLVM.BuildStore(Builder, stringPointerValue, stringPointerAddress);
+
+        var stringStorageValue = LLVM.BuildLoad(Builder, stringStorageAddress.Value, "slice_to_string.value");
+        return new LlvmValue<SymbolType.String>(stringStorageValue, Backend.StringType);
+    }
+
+    private LLVMValueRef BuildMallocRaw(LLVMValueRef count)
+    {
+        //LLVM.GetNamedFunction(Backend.Module, "default_allocator");
+        var mallocFunction = GetNamedFunction(Backend.Module, "malloc");
+        return LLVM.BuildCall(Builder, mallocFunction, new[] { count }, "malloc.result");
+    }
+
+    private LLVMValueRef BuildMemCpyRaw(LLVMValueRef dest, LLVMValueRef src, LLVMValueRef count)
+    {
+        var memcpyFunction = GetNamedFunction(Backend.Module, "memcpy");
+        return LLVM.BuildCall(Builder, memcpyFunction, new[] { dest, src, count }, "memcpy.result");
     }
 
     public void BuildBranch(LLVMBasicBlockRef block)

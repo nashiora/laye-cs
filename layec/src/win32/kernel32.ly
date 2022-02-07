@@ -8,3 +8,8 @@ extern "kernel32" i32 stdcall WriteConsoleA(i32 hConsoleOutput, u8 readonly[*]lp
 
 //http://alter.org.ua/en/docs/win/args/
 extern "kernel32" u8[*] stdcall GetCommandLineA();
+string GetCommandLine()
+{
+    u8[*] cmdarg = GetCommandLineA();
+    return cmdarg[:strlen(cmdarg)];
+}
