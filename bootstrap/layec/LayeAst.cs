@@ -189,6 +189,10 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan);
     public sealed record class PathLookup(PathPart Path) : Expr(Path.SourceSpan);
     public sealed record class NamedIndex(Expr TargetExpression, LayeToken.Identifier Name) : Expr(SourceSpan.Combine(TargetExpression, Name));
+    public sealed record class DynamicIndex(Expr TargetExpression, Expr[] Arguments)
+        : Expr(SourceSpan.Combine(TargetExpression, Arguments.LastOrDefault()));
+    public sealed record class Slice(Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression)
+        : Expr(SourceSpan.Combine(TargetExpression, OffsetExpression, CountExpression));
 
     public sealed record class GroupedExpression(LayeToken.Delimiter OpenGroup, Expr Expression, LayeToken.Delimiter CloseGroup)
         : Expr(new SourceSpan(OpenGroup.SourceSpan.StartLocation, CloseGroup.SourceSpan.EndLocation));

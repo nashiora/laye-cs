@@ -103,6 +103,23 @@ internal sealed class LayeLexer
 
                 break;
             }
+            // TODO(local): nested blocks
+            else if (c == '/' && HasNext && NextChar == '*')
+            {
+                Advance();
+                Advance();
+
+                while (!IsEoF)
+                {
+                    char p = c;
+                    c = CurrentChar;
+                    Advance();
+                    if (c == '/' && p == '*')
+                        break;
+                }
+
+                break;
+            }
             else break;
         }
     }

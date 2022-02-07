@@ -282,6 +282,18 @@ internal sealed class LayeChecker
                 return new SymbolType.Buffer(elementType, bufferType.Modifiers.Access);
             }
 
+            case LayeAst.SliceType sliceType:
+            {
+                var elementType = ResolveType(sliceType.ElementType);
+                if (elementType is null)
+                {
+                    AssertHasErrors("resolving slice element type");
+                    return null;
+                }
+
+                return new SymbolType.Slice(elementType, sliceType.Modifiers.Access);
+            }
+
             case LayeAst.FunctionType functionType:
             {
                 var returnType = ResolveType(functionType.ReturnType);
@@ -522,9 +534,9 @@ internal sealed class LayeChecker
         return new LayeCst.Block(block.SourceSpan, bodyNodes.ToArray());
     }
 
-    private LayeCst.Expr? CheckExpression(LayeAst.Expr statement)
+    private LayeCst.Expr? CheckExpression(LayeAst.Expr expression)
     {
-        switch (statement)
+        switch (expression)
         {
             //case LayeAst.NameLookup nameLookupExpr: { }
 
@@ -561,23 +573,96 @@ internal sealed class LayeChecker
                         if (namedIndexExpr.Name.Image == "length")
                             return new LayeCst.StringLengthLookup(namedIndexExpr.SourceSpan, target);
 
-                        m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, $"type `string` does not contain a field named `{namedIndexExpr.Name.Image}`"));
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `string` does not contain a field named `{namedIndexExpr.Name.Image}`"));
                         return null;
                     }
 
                     default:
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, $"cannot index type {target.Type}"));
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"cannot index type {target.Type}"));
                         return null;
                     }
                 }
+            }
+
+            case LayeAst.Slice sliceExpr:
+            {
+                var targetExpr = CheckExpression(sliceExpr.TargetExpression);
+                if (targetExpr is null)
+                {
+                    AssertHasErrors("checking slice target");
+                    return null;
+                }
+
+                var offsetExpr = sliceExpr.OffsetExpression is null ? null : CheckExpression(sliceExpr.OffsetExpression);
+                if (offsetExpr is null && sliceExpr.OffsetExpression is not null)
+                {
+                    AssertHasErrors("checking slice offset");
+                    return null;
+                }
+
+                var countExpr = sliceExpr.CountExpression is null ? null : CheckExpression(sliceExpr.CountExpression);
+                if (countExpr is null && sliceExpr.CountExpression is not null)
+                {
+                    AssertHasErrors("checking slice count");
+                    return null;
+                }
+
+                if (offsetExpr is not null)
+                {
+                    offsetExpr = CheckImplicitTypeCast(offsetExpr, new SymbolType.Integer(false));
+                    if (offsetExpr is null)
+                    {
+                        AssertHasErrors("checking implicit slice offset conversion");
+                        return null;
+                    }
+                }
+
+                if (countExpr is not null)
+                {
+                    countExpr = CheckImplicitTypeCast(countExpr, new SymbolType.Integer(false));
+                    if (countExpr is null)
+                    {
+                        AssertHasErrors("checking implicit slice count conversion");
+                        return null;
+                    }
+                }
+
+                SymbolType elementType;
+                switch (targetExpr.Type)
+                {
+                    case SymbolType.String: return new LayeCst.Substring(sliceExpr.SourceSpan, targetExpr, offsetExpr, countExpr);
+
+                    case SymbolType.Array arrayType: elementType = arrayType.ElementType; break;
+                    case SymbolType.Slice sliceType: elementType = sliceType.ElementType; break;
+
+                    case SymbolType.Buffer bufferType:
+                    {
+                        if (countExpr is null)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(targetExpr.SourceSpan, "cannot slice buffer type without a count"));
+                            return null;
+                        }
+
+                        elementType = bufferType.ElementType;
+                    } break;
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(targetExpr.SourceSpan, $"cannot index type {targetExpr.Type}"));
+                        return null;
+                    }
+                }
+
+                return new LayeCst.Slice(sliceExpr.SourceSpan, targetExpr, offsetExpr, countExpr, elementType);
             }
 
             case LayeAst.Invoke invokeExpr: return CheckInvoke(invokeExpr);
 
             default:
             {
-                m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "unrecognized expression type"));
+                Console.WriteLine($"internal compiler error: unrecognized expression type ({expression.GetType().Name})");
+                Environment.Exit(1);
                 return null;
             }
         }
@@ -735,7 +820,7 @@ internal sealed class LayeChecker
             {
                 if (targetType is SymbolType.Pointer _targetPointerType && _targetPointerType.ElementType == pointerType.ElementType)
                 {
-                    if (_targetPointerType.Access == AccessKind.ReadOnly)
+                    if (pointerType.Access == AccessKind.ReadWrite)
                         return new LayeCst.TypeCast(value.SourceSpan, value, pointerType);
                 }
             } break;
@@ -744,9 +829,20 @@ internal sealed class LayeChecker
             {
                 if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
                 {
-                    if (_targetBufferType.Access == AccessKind.ReadOnly)
+                    if (bufferType.Access == AccessKind.ReadWrite)
                         return new LayeCst.TypeCast(value.SourceSpan, value, bufferType);
                 }
+            } break;
+
+            case SymbolType.Slice sliceType:
+            {
+                if (targetType is SymbolType.Slice _targetSliceType && _targetSliceType.ElementType == sliceType.ElementType)
+                {
+                    if (sliceType.Access == AccessKind.ReadWrite)
+                        return new LayeCst.TypeCast(value.SourceSpan, value, sliceType);
+                }
+                else if (targetType is SymbolType.String)
+                    return new LayeCst.SliceToString(value);
             } break;
         }
 

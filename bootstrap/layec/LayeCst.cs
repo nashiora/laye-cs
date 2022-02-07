@@ -38,8 +38,13 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
         : Expr(SourceSpan.Combine(TargetExpression, Name), FieldType);
     public sealed record class StringLengthLookup(SourceSpan SourceSpan, Expr TargetExpression)
         : Expr(SourceSpan, new SymbolType.Integer(false));
+    public sealed record class Slice(SourceSpan SourceSpan, Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression, SymbolType ElementType)
+        : Expr(SourceSpan, new SymbolType.Slice(ElementType));
+    public sealed record class Substring(SourceSpan SourceSpan, Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression)
+        : Expr(SourceSpan, new SymbolType.String());
 
     public sealed record class TypeCast(SourceSpan SourceSpan, Expr Expression, SymbolType TargetType) : Expr(SourceSpan, TargetType);
+    public sealed record class SliceToString(Expr SliceExpression) : Expr(SliceExpression.SourceSpan, new SymbolType.String());
 
     public sealed record class InvokeFunction(SourceSpan SourceSpan, Symbol.Function TargetFunctionSymbol, Expr[] Arguments) : Expr(SourceSpan, TargetFunctionSymbol.Type!.ReturnType);
 

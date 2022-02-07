@@ -426,6 +426,30 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoadStringLengthFromAddress(stringStorageAddress);
             }
 
+            case LayeCst.Slice slice:
+            {
+                var targetValue = CompileExpression(builder, slice.TargetExpression);
+
+                var offsetValue = slice.OffsetExpression is null ? null : CompileExpression(builder, slice.OffsetExpression);
+                var countValue = slice.CountExpression is null ? null : CompileExpression(builder, slice.CountExpression);
+
+                switch (slice.TargetExpression.Type)
+                {
+                    case SymbolType.Buffer:
+                    {
+                        Debug.Assert(countValue is not null);
+                        return builder.BuildSliceFromBuffer(targetValue, offsetValue, countValue!);
+                    }
+
+                    default:
+                    {
+                        Console.WriteLine($"internal compiler error: unhandled slice target in LLVM backend ({slice.TargetExpression.Type})");
+                        Environment.Exit(1);
+                        return default!;
+                    }
+                }
+            }
+
             case LayeCst.TypeCast typeCast:
             {
                 var targetValue = CompileExpression(builder, typeCast.Expression);
@@ -624,6 +648,33 @@ internal sealed class LlvmFunctionBuilder
     {
         var lengthAddress = BuildStructGEP(Builder, stringAddress.Value, 0, "string.length.addr");
         return new(LLVM.BuildLoad(Builder, lengthAddress, "string.length"), Backend.UIntType);
+    }
+
+    public LlvmValue<SymbolType.Slice> BuildSliceFromBuffer(TypedLlvmValue bufferValue, TypedLlvmValue? offset, TypedLlvmValue count)
+    {
+        Debug.Assert(bufferValue.Type is SymbolType.Buffer);
+        if (offset is not null) Debug.Assert(offset.Type is SymbolType.Integer);
+        Debug.Assert(count.Type is SymbolType.Integer);
+
+        var sliceType = new SymbolType.Slice(((SymbolType.Buffer)bufferValue.Type).ElementType);
+
+        var sliceStorageAddress = BuildAlloca(sliceType, "slice_value");
+
+        var sliceLengthAddress = BuildStructGEP(Builder, sliceStorageAddress.Value, 0, "slice_value.length");
+        LLVM.BuildStore(Builder, count.Value, sliceLengthAddress);
+
+        var slicePointerAddress = BuildStructGEP(Builder, sliceStorageAddress.Value, 1, "slice_value.pointer");
+        if (offset is not null)
+        {
+            var bufferAsInt = BuildIntToPtr(Builder, bufferValue.Value, Backend.GetLlvmType(Backend.UIntType), "");
+            var bufferPlusOffset = BuildAdd(Builder, bufferAsInt, offset.Value, "");
+            var bufferAsPtr = BuildPtrToInt(Builder, bufferPlusOffset, Backend.GetLlvmType(bufferValue.Type), "");
+            LLVM.BuildStore(Builder, bufferAsPtr, slicePointerAddress);
+        }
+        else LLVM.BuildStore(Builder, bufferValue.Value, slicePointerAddress);
+
+        var stringStorageValue = LLVM.BuildLoad(Builder, sliceStorageAddress.Value, "slice_value.value");
+        return new LlvmValue<SymbolType.Slice>(stringStorageValue, sliceType);
     }
 
     public void BuildBranch(LLVMBasicBlockRef block)

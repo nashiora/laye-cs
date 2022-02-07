@@ -955,7 +955,7 @@ internal sealed class LayeParser
             var args = new List<LayeAst.Expr>();
             var argsDelims = new List<LayeToken.Delimiter>();
             
-            while (!CheckDelimiter(Delimiter.CloseParen, out var _))
+            while (!CheckDelimiter(Delimiter.CloseParen))
             {
                 var argument = ReadExpression();
                 if (argument is null)
@@ -984,6 +984,113 @@ internal sealed class LayeParser
 
             var invokeExpression = new LayeAst.Invoke(primary, openInvoke, args.ToArray(), argsDelims.ToArray(), closeInvoke);
             return ReadPrimaryExpressionSuffix(invokeExpression);
+        }
+        // TODO(local): figure out how to add access information to slices etc (e.g. `buffer readonly[0:10]` ?)
+        else if (CheckDelimiter(Delimiter.OpenBracket))
+        {
+            Advance(); // `[`
+
+            if (CheckDelimiter(Delimiter.Colon))
+            {
+                Advance(); // `:`
+                if (!ReadCommaSeparatedExpressions("dynamic index", out var postSliceArgs))
+                {
+                    AssertHasErrors("reading comma separated expressions");
+                    return null;
+                }
+
+                if (postSliceArgs.Count != 1)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(postSliceArgs.ToArray()), "exactly one expression expected for slice count argument"));
+                    return null;
+                }
+
+                if (!ExpectDelimiter(Delimiter.CloseBracket, out var _))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `]` to close slice argument list"));
+                    return null;
+                }
+
+                return ReadPrimaryExpressionSuffix(new LayeAst.Slice(primary, null, postSliceArgs[0]));
+            }
+
+            if (!ReadCommaSeparatedExpressions("dynamic index", out var args))
+            {
+                AssertHasErrors("reading comma separated expressions");
+                return null;
+            }
+
+            if (CheckDelimiter(Delimiter.Colon))
+            {
+                Advance(); // `:`
+
+                if (args.Count != 1)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(args.ToArray()), "exactly one expression expected for slice offset argument"));
+                    return null;
+                }
+
+                if (CheckDelimiter(Delimiter.CloseBracket))
+                {
+                    Advance(); // `]`
+                    return ReadPrimaryExpressionSuffix(new LayeAst.Slice(primary, args[0], null));
+                }
+
+                if (!ReadCommaSeparatedExpressions("dynamic index", out var postSliceArgs))
+                {
+                    AssertHasErrors("reading comma separated expressions");
+                    return null;
+                }
+
+                if (postSliceArgs.Count != 1)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(postSliceArgs.ToArray()), "exactly one expression expected for slice count argument"));
+                    return null;
+                }
+
+                if (!ExpectDelimiter(Delimiter.CloseBracket, out var _))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `]` to close slice argument list"));
+                    return null;
+                }
+
+                return ReadPrimaryExpressionSuffix(new LayeAst.Slice(primary, args[0], postSliceArgs[0]));
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseBracket, out var _))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `]` to close dynamic index argument list"));
+                return null;
+            }
+
+            var dynamicIndexExpression = new LayeAst.DynamicIndex(primary, args.ToArray());
+            return ReadPrimaryExpressionSuffix(dynamicIndexExpression);
+        }
+
+        bool ReadCommaSeparatedExpressions(string argsKind, out List<LayeAst.Expr> args)
+        {
+            args = new List<LayeAst.Expr>();
+            while (!IsEoF && !CheckDelimiter(Delimiter.CloseParen) &&
+                !CheckDelimiter(Delimiter.CloseBracket) && !CheckDelimiter(Delimiter.Colon))
+            {
+                var argument = ReadExpression();
+                if (argument is null)
+                {
+                    AssertHasErrors($"failing to parse {argsKind} argument expression");
+                    return false;
+                }
+
+                args.Add(argument);
+
+                if (CheckDelimiter(Delimiter.Comma))
+                {
+                    Advance();
+                    continue;
+                }
+                else break;
+            }
+
+            return true;
         }
 
         return primary;
