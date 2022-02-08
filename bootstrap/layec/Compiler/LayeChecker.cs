@@ -865,6 +865,12 @@ internal sealed class LayeChecker
 
         switch (value.Type)
         {
+            case SymbolType.RawPtr:
+            {
+                if (targetType is SymbolType.Buffer)
+                    return new LayeCst.TypeCast(value.SourceSpan, value, targetType);
+            } break;
+
             case SymbolType.UntypedInteger:
             {
                 if (targetType is SymbolType.Integer _targetIntType)
@@ -911,7 +917,9 @@ internal sealed class LayeChecker
 
             case SymbolType.Buffer bufferType:
             {
-                if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
+                if (targetType is SymbolType.RawPtr)
+                    return new LayeCst.TypeCast(value.SourceSpan, value, new SymbolType.RawPtr());
+                else if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
                 {
                     if (bufferType.Access == AccessKind.ReadWrite)
                         return new LayeCst.TypeCast(value.SourceSpan, value, bufferType);

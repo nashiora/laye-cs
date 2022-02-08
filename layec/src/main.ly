@@ -32,10 +32,12 @@ void main()
 {
     __laye_context lcontext;
 
-    u8[*] test = GetCommandLineA();
-    test[0] = 65;
+    u8 readonly[*] test = GetCommandLineA();
+    u8[*] testcpy = malloc(strlen(test));
+    memcpy(testcpy, test, strlen(test));
+    testcpy[0] = 65;
 
-    printf("test: %s%c", test, 10);
+    printf("test: %s%c", testcpy, 10);
 
     string args = system_command_line_get();
     printf("process invoked with the following arguments:%c%.*s%c", 10, args.length, args.data, 10);

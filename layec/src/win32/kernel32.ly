@@ -7,4 +7,4 @@ extern "kernel32" i32 stdcall GetStdHandle(i32 nStdHandle);
 extern "kernel32" i32 stdcall WriteConsoleA(i32 hConsoleOutput, u8 readonly[*]lpBuffer, i32 nNumberOfCharsToWrite, rawptr lpNumberOfCharsWritten, rawptr lpReserved);
 
 //http://alter.org.ua/en/docs/win/args/
-extern "kernel32" u8[*] stdcall GetCommandLineA();
+extern "kernel32" u8 readonly[*] stdcall GetCommandLineA();

@@ -518,6 +518,8 @@ internal sealed class LlvmBackend : IBackend
                     {
                         if (targetValue.Type is SymbolType.Integer || targetValue.Type is SymbolType.SizedInteger)
                             return builder.BuildIntToRawPtrCast(targetValue);
+                        else if (targetValue.Type is SymbolType.Buffer)
+                            return builder.BuildAnyPointerToRawPtrCast(targetValue);
                     } break;
 
                     case SymbolType.Pointer pointerType:
@@ -533,7 +535,9 @@ internal sealed class LlvmBackend : IBackend
 
                     case SymbolType.Buffer bufferType:
                     {
-                        if (targetValue.Type is SymbolType.Integer || targetValue.Type is SymbolType.SizedInteger)
+                        if (targetValue.Type is SymbolType.RawPtr)
+                            return builder.BuildRawPtrToAnyPointerCast(targetValue, bufferType);
+                        else if (targetValue.Type is SymbolType.Integer || targetValue.Type is SymbolType.SizedInteger)
                             return builder.BuildIntToBufferCast(targetValue, bufferType);
                         else if (targetValue.Type is SymbolType.Buffer valueBufferType)
                         {
@@ -844,6 +848,18 @@ internal sealed class LlvmFunctionBuilder
     {
         var cast = BuildIntToPtr(Builder, value.Value, PointerType(Int8TypeInContext(Context), 0), "int.to.rawptr");
         return new(cast, new());
+    }
+
+    public LlvmValue<SymbolType.RawPtr> BuildAnyPointerToRawPtrCast(TypedLlvmValue value)
+    {
+        var cast = BuildPointerCast(Builder, value.Value, PointerType(Int8TypeInContext(Context), 0), "anyptr.to.rawptr");
+        return new(cast, new());
+    }
+
+    public TypedLlvmValue BuildRawPtrToAnyPointerCast(TypedLlvmValue value, SymbolType type)
+    {
+        var cast = BuildPointerCast(Builder, value.Value, Backend.GetLlvmType(type), "rawptr.to.anyptr");
+        return new(cast, type);
     }
 }
 

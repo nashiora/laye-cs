@@ -13,7 +13,7 @@ u8[*] string_to_cstring(string s)
 
     return cstring;
 }
-*/
+//*/
 
 string string_concat(string a, string b)
 {

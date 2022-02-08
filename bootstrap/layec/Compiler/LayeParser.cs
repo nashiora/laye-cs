@@ -833,16 +833,17 @@ internal sealed class LayeParser
     expressionStatement:
         m_tokenIndex = startPosition;
 
-        var expression = ReadExpression();
+        var expression = ReadExpression(out bool isPrimary);
         if (expression is null)
         {
             AssertHasErrors("reading expression as statement");
             return null;
         }
 
-        if (CheckOperator(Operator.Assign))
+        if (isPrimary && CheckOperator(Operator.Assign))
         {
             Advance(); // `=`
+
             var rhsValueExpression = ReadExpression();
             if (rhsValueExpression is null)
             {
@@ -870,9 +871,33 @@ internal sealed class LayeParser
         }
     }
 
-    private LayeAst.Expr? ReadExpression()
+    private LayeAst.Expr? ReadExpression() => ReadExpression(out _);
+    private LayeAst.Expr? ReadExpression(out bool isPrimary)
     {
-        return ReadPrimaryExpression();
+        isPrimary = true;
+        
+        var expression = ReadPrimaryExpression();
+        if (expression is null)
+        {
+            AssertHasErrors("reading primary expression");
+            return null;
+        }
+
+        while (CheckOperator(out var infix, op => op.Kind != Operator.Assign))
+        {
+            isPrimary = false;
+
+            var rhs = ReadPrimaryExpression();
+            if (rhs is null)
+            {
+                AssertHasErrors("reading primary expression as rhs");
+                return null;
+            }
+
+            expression = new LayeAst.InfixOperation(expression, infix, rhs);
+        }
+
+        return expression;
     }
 
     private LayeAst.Expr? ReadPrimaryExpression()
