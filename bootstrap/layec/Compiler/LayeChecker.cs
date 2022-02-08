@@ -477,11 +477,43 @@ internal sealed class LayeChecker
                 var expr = CheckExpression(exprStmt.Expression);
                 if (expr is null)
                 {
-                    AssertHasErrors("failing to compile expression statement");
+                    AssertHasErrors("checking expression statement");
                     return null;
                 }
 
                 return new LayeCst.ExpressionStatement(expr);
+            }
+
+            case LayeAst.Assignment assignmentStmt:
+            {
+                var targetExpression = CheckExpression(assignmentStmt.TargetExpression);
+                if (targetExpression is null)
+                {
+                    AssertHasErrors("checking assignment target");
+                    return null;
+                }
+
+                if (!targetExpression.CheckIsLValue())
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(assignmentStmt.TargetExpression.SourceSpan, "target of assignment must be an l-value"));
+                    return null;
+                }
+
+                var valueExpression = CheckExpression(assignmentStmt.ValueExpression);
+                if (valueExpression is null)
+                {
+                    AssertHasErrors("checking assignment value");
+                    return null;
+                }
+
+                valueExpression = CheckImplicitTypeCast(valueExpression, targetExpression.Type);
+                if (valueExpression is null)
+                {
+                    AssertHasErrors("checking assignment value implicit conversion");
+                    return null;
+                }
+
+                return new LayeCst.Assignment(targetExpression, valueExpression);
             }
 
             default:
@@ -577,6 +609,56 @@ internal sealed class LayeChecker
 
                         m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `string` does not contain a field named `{namedIndexExpr.Name.Image}`"));
                         return null;
+                    }
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"cannot index type {target.Type}"));
+                        return null;
+                    }
+                }
+            }
+
+            case LayeAst.DynamicIndex dynamicIndexExpr:
+            {
+                var target = CheckExpression(dynamicIndexExpr.TargetExpression);
+                if (target is null)
+                {
+                    AssertHasErrors("checking dynamic index target");
+                    return null;
+                }
+
+                var indices = new LayeCst.Expr[dynamicIndexExpr.Arguments.Length];
+                for (int i = 0; i < dynamicIndexExpr.Arguments.Length; i++)
+                {
+                    var arg = CheckExpression(dynamicIndexExpr.Arguments[i]);
+                    if (arg is null)
+                    {
+                        AssertHasErrors("checking dynamic index argument");
+                        return null;
+                    }
+
+                    indices[i] = arg;
+                }
+
+                switch (target.Type)
+                {
+                    case SymbolType.Buffer bufferType:
+                    {
+                        if (indices.Length != 1)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"exactly one index argument required for type {target.Type}"));
+                            return null;
+                        }
+
+                        var index = CheckImplicitTypeCast(indices[0], new SymbolType.Integer(false));
+                        if (index is null)
+                        {
+                            AssertHasErrors("checking buffer index implicit cast to uint");
+                            return null;
+                        }
+
+                        return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, bufferType.ElementType);
                     }
 
                     default:

@@ -40,6 +40,8 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
         : Expr(SourceSpan, new SymbolType.Integer(false));
     public sealed record class StringDataLookup(SourceSpan SourceSpan, Expr TargetExpression)
         : Expr(SourceSpan, new SymbolType.Buffer(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly));
+    public sealed record class DynamicIndex(SourceSpan SourceSpan, Expr TargetExpression, Expr[] Arguments, SymbolType Type)
+        : Expr(SourceSpan, Type);
     public sealed record class Slice(SourceSpan SourceSpan, Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression, SymbolType ElementType)
         : Expr(SourceSpan, new SymbolType.Slice(ElementType));
     public sealed record class Substring(SourceSpan SourceSpan, Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression)
@@ -57,6 +59,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public abstract record class Stmt(SourceSpan SourceSpan) : LayeCst(SourceSpan);
 
     public sealed record class ExpressionStatement(Expr Expression) : Stmt(Expression.SourceSpan);
+    public sealed record class Assignment(Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan.Combine(TargetExpression, ValueExpression));
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
     public sealed record class DeadCode(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
@@ -84,6 +87,15 @@ internal static class LayeCstExtensions
     {
         LayeCst.Return => true,
         LayeCst.Block block => block.Body.Any(child => child.CheckReturns()),
+        _ => false,
+    };
+
+    public static bool CheckIsLValue(this LayeCst.Expr node) => node switch
+    {
+        LayeCst.LoadValue => true,
+        LayeCst.NamedIndex => true,
+        LayeCst.DynamicIndex dyn => dyn.TargetExpression.CheckIsLValue(),
+        // TODO(local): a typecast is also valid, but we aren't worried about that for now.
         _ => false,
     };
 }

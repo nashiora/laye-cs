@@ -374,6 +374,13 @@ internal sealed class LlvmBackend : IBackend
 
             case LayeCst.ExpressionStatement exprStmt: CompileExpression(builder, exprStmt.Expression); break;
 
+            case LayeCst.Assignment assignmentStmt:
+            {
+                var target = CompileExpressionAsLValue(builder, assignmentStmt.TargetExpression);
+                var value = CompileExpression(builder, assignmentStmt.ValueExpression);
+                builder.BuildStore(value, target);
+            } break;
+
             default:
             {
                 Console.WriteLine($"internal compiler error: unhandled statement in LLVM backend {statement.GetType().Name}");
@@ -383,8 +390,51 @@ internal sealed class LlvmBackend : IBackend
         }
     }
 
+    private LlvmValue<SymbolType.Pointer> CompileExpressionAsLValue(LlvmFunctionBuilder builder, LayeCst.Expr expression)
+    {
+        switch (expression)
+        {
+            case LayeCst.LoadValue load: return builder.GetSymbolAddress(load.Symbol);
+
+            case LayeCst.DynamicIndex dynamicIndex:
+            {
+                var target = CompileExpressionAsLValue(builder, dynamicIndex.TargetExpression);
+                var indices = dynamicIndex.Arguments.Select(arg => CompileExpression(builder, arg)).ToArray();
+
+                switch (target.Type.ElementType)
+                {
+                    case SymbolType.Buffer bufferType:
+                    {
+                        Debug.Assert(indices.Length == 1);
+                        return builder.GetBufferIndexAddress(target, indices[0]);
+                    }
+
+                    default:
+                    {
+                        Console.WriteLine($"internal compiler error: unhandled dynamic index target type in LLVM backend ({target.Type})");
+                        Environment.Exit(1);
+                        return default!;
+                    }
+                }
+            }
+
+            default:
+            {
+                Console.WriteLine($"internal compiler error: unhandled expression in LLVM backend ({expression.GetType().Name})");
+                Environment.Exit(1);
+                return default!;
+            }
+        }
+    }
+
     private TypedLlvmValue CompileExpression(LlvmFunctionBuilder builder, LayeCst.Expr expression)
     {
+        if (expression.CheckIsLValue())
+        {
+            var lvalue = CompileExpressionAsLValue(builder, expression);
+            return builder.BuildLoad(lvalue);
+        }
+
         switch (expression)
         {
             case LayeCst.String _string:
@@ -409,12 +459,6 @@ internal sealed class LlvmBackend : IBackend
                 TypedLlvmValue intValue;
                 intValue = builder.ConstInteger(_int.Type, _int.Literal.LiteralValue);
                 return intValue;
-            }
-
-            case LayeCst.LoadValue load:
-            {
-                var address = builder.GetSymbolAddress(load.Symbol);
-                return builder.BuildLoad(address, load.Symbol.Name);
             }
 
             case LayeCst.StringLengthLookup stringLengthLookup:
@@ -657,6 +701,19 @@ internal sealed class LlvmFunctionBuilder
     {
         Debug.Assert(value.Type == address.Type.ElementType, $"type checker did not ensure value and address types were the same ({value.Type} != {address.Type.ElementType})");
         LLVM.BuildStore(Builder, value.Value, address.Value);
+    }
+
+    public LlvmValue<SymbolType.Pointer> GetBufferIndexAddress(TypedLlvmValue bufferTarget, TypedLlvmValue index)
+    {
+        Debug.Assert(bufferTarget.Type is SymbolType.Pointer targetAddr && targetAddr.ElementType is SymbolType.Buffer);
+        Debug.Assert(index.Type is SymbolType.Integer);
+
+        var bufferType = (SymbolType.Buffer)((SymbolType.Pointer)bufferTarget.Type).ElementType;
+        var bufferElementType = bufferType.ElementType;
+
+        var bufferValue = LLVM.BuildLoad(Builder, bufferTarget.Value, "buffer_value");
+        var address = BuildInBoundsGEP(Builder, bufferValue, new[] { index.Value }, "buffer_index_addr");
+        return new(address, new SymbolType.Pointer(bufferElementType));
     }
 
     public LlvmValue<SymbolType.Integer> BuildLoadStringLengthFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)

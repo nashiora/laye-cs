@@ -92,6 +92,7 @@ internal sealed class LayeParser
     private bool CheckIdentifier(out LayeToken.Identifier identifier) => Check(out identifier);
     private bool CheckDelimiter(Delimiter kind) => Check(out LayeToken.Delimiter delimiter) && delimiter.Kind == kind;
     private bool CheckDelimiter(Delimiter kind, out LayeToken.Delimiter delimiter) => Check(out delimiter) && delimiter.Kind == kind;
+    private bool CheckOperator(Operator kind) => Check(out LayeToken.Operator @operator) && @operator.Kind == kind;
     private bool CheckOperator(Operator kind, out LayeToken.Operator @operator) => Check(out @operator) && @operator.Kind == kind;
     private bool CheckOperator(out LayeToken.Operator @operator, Predicate<LayeToken.Operator> predicate) => Check(out @operator) && predicate(@operator);
     private bool CheckKeyword(Keyword kind) => Check(out LayeToken.Keyword keyword) && keyword.Kind == kind;
@@ -835,17 +836,38 @@ internal sealed class LayeParser
         var expression = ReadExpression();
         if (expression is null)
         {
-            AssertHasErrors("failing to read expression as statement");
+            AssertHasErrors("reading expression as statement");
             return null;
         }
 
-        if (!ExpectDelimiter(Delimiter.SemiColon, out var semi))
+        if (CheckOperator(Operator.Assign))
         {
-            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate expression statement"));
-            return null;
-        }
+            Advance(); // `=`
+            var rhsValueExpression = ReadExpression();
+            if (rhsValueExpression is null)
+            {
+                AssertHasErrors("reading expression as value in assignment");
+                return null;
+            }
 
-        return new LayeAst.ExpressionStatement(expression, semi);
+            if (!ExpectDelimiter(Delimiter.SemiColon, out _))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate assignment"));
+                return null;
+            }
+
+            return new LayeAst.Assignment(expression, rhsValueExpression);
+        }
+        else
+        {
+            if (!ExpectDelimiter(Delimiter.SemiColon, out var semi))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate expression statement"));
+                return null;
+            }
+
+            return new LayeAst.ExpressionStatement(expression, semi);
+        }
     }
 
     private LayeAst.Expr? ReadExpression()
@@ -1047,7 +1069,6 @@ internal sealed class LayeParser
                     m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(postSliceArgs.ToArray()), "exactly one expression expected for slice count argument"));
                     return null;
                 }
-
                 if (!ExpectDelimiter(Delimiter.CloseBracket, out var _))
                 {
                     m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `]` to close slice argument list"));
