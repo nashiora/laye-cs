@@ -17,7 +17,6 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class FunctionModifiers
     {
         public string? ExternLibrary { get; set; }
-        public VisibilityKind Visibility { get; set; } = VisibilityKind.Internal;
         public CallingConvention CallingConvention { get; set; } = CallingConvention.Laye;
         public FunctionHintKind FunctionHint { get; set; } = FunctionHintKind.None;
     }
@@ -72,7 +71,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class BlockFunctionBody(Block BodyBlock) : FunctionBody;
     public sealed record class ExpressionFunctionBody(Expr BodyExpression) : FunctionBody;
 
-    public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, LayeToken.Identifier FunctionName, Symbol.Function FunctionSymbol, FunctionBody Body)
+    public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, LayeToken.Identifier FunctionName, Symbol.Function FunctionSymbol, Symbol.Binding[] ParameterSymbols, FunctionBody Body)
         : Stmt(FunctionName.SourceSpan);
 
     public sealed record class Return(SourceSpan SourceSpan, Expr? ReturnValue)

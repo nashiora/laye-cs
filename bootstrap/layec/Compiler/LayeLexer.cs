@@ -5,11 +5,11 @@ namespace laye.Compiler;
 
 internal sealed class LayeLexer
 {
-    public static LayeToken[] ReadTokensFromFile(string filePath, List<Diagnostic> diagnostics)
+    public static bool ReadTokensFromFile(string filePath, List<Diagnostic> diagnostics, out LayeToken[] result)
     {
         string sourceText = File.ReadAllText(filePath);
         var lexer = new LayeLexer(filePath, diagnostics, sourceText);
-        return lexer.ReadTokens();
+        return lexer.ReadTokens(out result);
     }
 
     private readonly string m_fileName;
@@ -34,21 +34,27 @@ internal sealed class LayeLexer
         m_sourceText = sourceText;
     }
 
-    private LayeToken[] ReadTokens()
+    private bool ReadTokens(out LayeToken[] result)
     {
         var tokens = new List<LayeToken>();
+        result = Array.Empty<LayeToken>();
 
         while (!IsEoF)
         {
             var token = ReadToken();
             if (token is null)
-                break;
+            {
+                if (m_diagnostics.Any(d => d is Diagnostic.Error))
+                    return false;
+                else break;
+            }
 
             ConsumeTriviaUntilLineEnd();
             tokens.Add(token);
         }
 
-        return tokens.ToArray();
+        result = tokens.ToArray();
+        return true;
     }
 
     private void Advance()

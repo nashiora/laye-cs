@@ -21,6 +21,9 @@ internal sealed class LayeChecker
     private void PushScope(SymbolTable scope) => m_scopes.Push(scope);
     private void PopScope() => m_scopes.Pop();
 
+    private readonly Dictionary<string, string> m_headerToImpls = new();
+    private readonly Dictionary<string, string> m_implToHeader = new();
+
     private LayeChecker(LayeAstRoot[] syntax, SymbolTable symbols, List<Diagnostic> diagnostics)
     {
         m_syntax = syntax;
@@ -44,6 +47,7 @@ internal sealed class LayeChecker
         foreach (var astRoot in m_syntax)
         {
             var topLevelNodes = astRoot.TopLevelNodes;
+
             foreach (var node in topLevelNodes)
             {
                 switch (node)
@@ -111,7 +115,7 @@ internal sealed class LayeChecker
 
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
-                        var sym = (Symbol.Function)syms[fnDecl];
+                        Symbol.Function sym = (Symbol.Function)syms[fnDecl];
 
                         var returnType = ResolveType(fnDecl.ReturnType);
                         if (returnType is null)
@@ -332,6 +336,18 @@ internal sealed class LayeChecker
         var functionScope = new SymbolTable(CurrentScope) { FunctionSymbol = sym };
         PushScope(functionScope);
 
+        var paramSymbols = new Symbol.Binding[fnDecl.Parameters.Length];
+        for (int i = 0; i < fnDecl.Parameters.Length; i++)
+        {
+            var param = fnDecl.Parameters[i];
+            var paramType = sym.Type!.Parameters[i].Type;
+
+            var paramSymbol = new Symbol.Binding(param.Binding.BindingName.Image, paramType);
+            paramSymbols[i] = paramSymbol;
+
+            functionScope.AddSymbol(paramSymbol);
+        }
+
         LayeCst.FunctionBody functionBody;
         switch (fnDecl.Body)
         {
@@ -361,12 +377,11 @@ internal sealed class LayeChecker
         var modifiers = new LayeCst.FunctionModifiers()
         {
             ExternLibrary = fnDecl.Modifiers.ExternLibrary,
-            Visibility = fnDecl.Modifiers.Visibility,
             CallingConvention = fnDecl.Modifiers.CallingConvention,
             FunctionHint = fnDecl.Modifiers.FunctionHint,
         };
 
-        return new LayeCst.FunctionDeclaration(modifiers, fnDecl.Name, sym, functionBody);
+        return new LayeCst.FunctionDeclaration(modifiers, fnDecl.Name, sym, paramSymbols, functionBody);
     }
 
     private LayeCst.Stmt? CheckStatement(LayeAst.Stmt statement)

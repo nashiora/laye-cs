@@ -1,5 +1,3 @@
-//struct __laye_string { u8 readonly [*]value; }
-
 /*
 u8[*] string_to_cstring(string s)
 {

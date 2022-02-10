@@ -54,7 +54,14 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         ShowVerbose($"Parsing `{sourceFile}`");
 
         var sourceSyntax = LayeParser.ParseSyntaxFromFile(sourceFile, diagnostics);
-        sourceSyntaxes[sourceFile] = new(sourceSyntax);
+        if (sourceSyntax is null)
+        {
+            ShowInfo("  failed to parse");
+            PrintDiagnostics(diagnostics);
+            return 1;
+        }
+
+        sourceSyntaxes[sourceFile] = sourceSyntax;
 
         if (args.PrintSyntaxTrees)
         {

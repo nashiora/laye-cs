@@ -1,44 +1,21 @@
-
-struct test_struct
-{
-    int a;
-    readonly int b;
-}
-
-struct __laye_context
-{
-    rawptr nocontext(uint, rawptr) allocatorFunction;
-    string invokerFileName;
-    uint invokerFileLine;
-}
-
 /*
-rawptr nocontext default_allocator(uint size, rawptr memory)
-{
-    if (size > 0)
-    {
-        if (memory != nullptr)
-            return realloc(memory, size);
 
-        return malloc(size);
-    }
+[ ] Branch structures
+    [ ] If/else
+    [ ] While
+    [ ] For? some other simple looping mechanism? even necessary?
+[ ] Operator expressions
+    [ ] Infix ops
+    [ ] Prefix ops
+[ ] Tagged unions
+    [ ] Enum/union syntax
+    [ ] Switch statements
 
-    free(memory);
-    return nullptr;
-}
 */
 
-void main()
+// TODO(local): compile `main` into `_laye_start`, overwrite the entry point with actual startup logic to turn this into a string slice
+void main(i32 argc, u8 readonly[*][*] argv)
 {
-    __laye_context lcontext;
-
-    u8 readonly[*] test = GetCommandLineA();
-    u8[*] testcpy = malloc(strlen(test));
-    memcpy(testcpy, test, strlen(test));
-    testcpy[0] = 65;
-
-    printf("test: %s%c", testcpy, 10);
-
-    string args = system_command_line_get();
-    printf("process invoked with the following arguments:%c%.*s%c", 10, args.length, args.data, 10);
+    printf("process invoked with the following arguments:%c", 10);
+    printf("  %p%c", argv, 10);
 }

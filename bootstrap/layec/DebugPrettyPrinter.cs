@@ -36,9 +36,9 @@ internal sealed class DebugPrettyPrinter
         SourceText = sourceText;
     }
 
-    public void PrettyPrint(LayeAst[] root)
+    public void PrettyPrint(LayeAstRoot root)
     {
-        var children = root.OrderBy(n => n.SourceSpan);
+        var children = root.TopLevelNodes.OrderBy(n => n.SourceSpan);
         if (!children.Any())
             return;
 

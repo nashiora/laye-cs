@@ -1,6 +1,6 @@
 ﻿namespace laye;
 
-internal sealed record class LayeAstRoot(LayeAst[] TopLevelNodes)
+internal sealed record class LayeAstRoot(string FileName, LayeAst[] TopLevelNodes)
 {
 }
 
@@ -8,8 +8,8 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 {
     #region Shared Data
 
-    public sealed record class BindingData(ContainerModifiers Modifiers, Type BindingType, LayeToken.Identifier BindingName)
-        : LayeAst(SourceSpan.Combine(Modifiers, BindingType, BindingName));
+    public sealed record class BindingData(Type BindingType, LayeToken.Identifier BindingName)
+        : LayeAst(SourceSpan.Combine(BindingType, BindingName));
 
     public sealed record class ParamData(BindingData Binding, LayeToken.Operator? AssignOperator, Expr? DefaultValue)
         : LayeAst(SourceSpan.Combine(new IHasSourceSpan?[] { Binding, DefaultValue }));
@@ -34,7 +34,6 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public abstract record class Modifier(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
     public sealed record class ExternModifier(LayeToken.Keyword ExternKeyword, LayeToken.String LibraryName) : Modifier(SourceSpan.Combine(ExternKeyword, LibraryName));
-    public sealed record class VisibilityModifier(LayeToken.Keyword VisibilityKeyword) : Modifier(VisibilityKeyword.SourceSpan);
     public sealed record class CallingConventionModifier(LayeToken.Keyword ConventionKeyword) : Modifier(ConventionKeyword.SourceSpan);
     public sealed record class FunctionHintModifier(LayeToken.Keyword HintKeyword) : Modifier(HintKeyword.SourceSpan);
     public sealed record class AccessModifier(LayeToken.Keyword AccessKeyword) : Modifier(AccessKeyword.SourceSpan);
@@ -56,20 +55,11 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class FunctionModifiers : IHasSourceSpan
     {
-        public SourceSpan SourceSpan => IsEmpty ? SourceSpan.Invalid : SourceSpan.Combine(ExternModifier, VisibilityModifier, CallingConventionModifier, FunctionHintModifier);
-        public bool IsEmpty => ExternModifier is null && VisibilityModifier is null && CallingConventionModifier is null && FunctionHintModifier is null;
+        public SourceSpan SourceSpan => IsEmpty ? SourceSpan.Invalid : SourceSpan.Combine(ExternModifier, CallingConventionModifier, FunctionHintModifier);
+        public bool IsEmpty => ExternModifier is null && CallingConventionModifier is null && FunctionHintModifier is null;
 
         public ExternModifier? ExternModifier { get; set; }
         public string? ExternLibrary => ExternModifier?.LibraryName.LiteralValue;
-
-        public VisibilityModifier? VisibilityModifier { get; set; }
-        public VisibilityKind Visibility => VisibilityModifier?.VisibilityKeyword.Kind switch
-        {
-            Keyword.Public => VisibilityKind.Public,
-            Keyword.Internal => VisibilityKind.Internal,
-            Keyword.Private => VisibilityKind.Private,
-            _ => VisibilityKind.Internal,
-        };
 
         public CallingConventionModifier? CallingConventionModifier { get; set; }
         public CallingConvention CallingConvention => CallingConventionModifier?.ConventionKeyword.Kind switch
@@ -189,8 +179,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan);
     public sealed record class PathLookup(PathPart Path) : Expr(Path.SourceSpan);
     public sealed record class NamedIndex(Expr TargetExpression, LayeToken.Identifier Name) : Expr(SourceSpan.Combine(TargetExpression, Name));
-    public sealed record class DynamicIndex(Expr TargetExpression, Expr[] Arguments)
-        : Expr(SourceSpan.Combine(TargetExpression, Arguments.LastOrDefault()));
+    public sealed record class DynamicIndex(Expr TargetExpression, Expr[] Arguments) : Expr(SourceSpan.Combine(TargetExpression, Arguments.LastOrDefault()));
     public sealed record class Slice(Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression)
         : Expr(SourceSpan.Combine(TargetExpression, OffsetExpression, CountExpression));
 

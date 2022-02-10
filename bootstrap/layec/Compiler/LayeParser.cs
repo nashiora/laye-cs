@@ -6,11 +6,12 @@ namespace laye.Compiler;
 
 internal sealed class LayeParser
 {
-    public static LayeAst[] ParseSyntaxFromFile(string sourceFilePath, List<Diagnostic> diagnostics)
+    public static LayeAstRoot? ParseSyntaxFromFile(string sourceFilePath, List<Diagnostic> diagnostics)
     {
-        var tokens = LayeLexer.ReadTokensFromFile(sourceFilePath, diagnostics);
-        if (tokens.Length == 0)
-            return Array.Empty<LayeAst>();
+        sourceFilePath = sourceFilePath.Replace('/', '\\');
+
+        if (!LayeLexer.ReadTokensFromFile(sourceFilePath, diagnostics, out var tokens))
+            return null;
 
         var parser = new LayeParser(sourceFilePath, diagnostics, tokens);
         return parser.GetSyntaxTree();
@@ -36,7 +37,7 @@ internal sealed class LayeParser
         m_tokens = tokens;
     }
 
-    private LayeAst[] GetSyntaxTree()
+    private LayeAstRoot? GetSyntaxTree()
     {
         var topLevelNodes = new List<LayeAst>();
 
@@ -45,14 +46,14 @@ internal sealed class LayeParser
             var topLevelNode = ReadTopLevel();
             if (topLevelNode is null)
             {
-                AssertHasErrors("failing to get top level node in main parse loop");
-                return Array.Empty<LayeAst>();
+                AssertHasErrors("reading top level node");
+                return null;
             }
 
             topLevelNodes.Add(topLevelNode);
         }
 
-        return topLevelNodes.ToArray();
+        return new(m_fileName, topLevelNodes.ToArray());
     }
 
     private void AssertHasErrors(string context)
@@ -60,7 +61,7 @@ internal sealed class LayeParser
         Debug.Assert(m_diagnostics.Any(d => d is Diagnostic.Error), $"No error diagnostics generated when {context}");
     }
 
-    #region Token Traversal
+#region Token Traversal
 
     private void Advance() => m_tokenIndex++;
     private LayeToken Peek(int peekOffset = 1)
@@ -127,9 +128,9 @@ internal sealed class LayeParser
     private bool ExpectOperator(Operator kind, out LayeToken.Operator @operator) => Expect(out @operator, @operator => @operator.Kind == kind);
     private bool ExpectKeyword(Keyword kind, out LayeToken.Keyword keyword) => Expect(out keyword, keyword => keyword.Kind == kind);
 
-    #endregion
+#endregion
 
-    #region Modifiers
+#region Modifiers
 
     private LayeAst.ContainerModifiers? ReadContainerModifierList(bool isRequired = true)
     {
@@ -169,21 +170,6 @@ internal sealed class LayeParser
         {
             switch (keyword.Kind)
             {
-                case Keyword.Public: case Keyword.Internal: case Keyword.Private:
-                {
-                    if (modifiers.VisibilityModifier is not null)
-                    {
-                        if (isRequired)
-                            m_diagnostics.Add(new Diagnostic.Error(keyword.SourceSpan, "only one visibility modifier allowed per function declaration"));
-
-                        m_tokenIndex = tokenIndex;
-                        return null;
-                    }
-
-                    Advance(); // keyword
-                    modifiers.VisibilityModifier = new(keyword);
-                } break;
-
                 case Keyword.Intrinsic: case Keyword.Export:
                 case Keyword.Inline:    case Keyword.Naked:
                 {
@@ -547,7 +533,53 @@ internal sealed class LayeParser
         return type;
     }
 
-#endregion
+    #endregion
+
+#if false
+    private LayeAstHeaderInfo? ReadHeaderInfo()
+    {
+        Advance(); // `__header`
+        if (!ExpectDelimiter(Delimiter.OpenBrace, out _))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `{` to open header block"));
+            return null;
+        }
+
+        var implFiles = new List<LayeAstHeaderInfo.ImplFile>();
+
+        while (!CheckDelimiter(Delimiter.CloseBrace) && !IsEoF)
+        {
+            if (!CheckIdentifier(out var kw))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `__impl` to name optional implementation file in header block"));
+                return null;
+            }
+
+            switch (kw.Image)
+            {
+                case "__impl":
+                {
+                    Advance(); // `__impl`
+                    if (!Expect<LayeToken.String>(out var filePath))
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected file path string for `__impl` statement"));
+                        return null;
+                    }
+
+                    implFiles.Add(new(SourceSpan.Combine(kw.SourceSpan, MostRecentTokenSpan), filePath, null));
+                } break;
+            }
+        }
+
+        if (!ExpectDelimiter(Delimiter.CloseBrace, out _))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `}` to close header block"));
+            return null;
+        }
+
+        return new(implFiles.ToArray());
+    }
+#endif
 
     private LayeAst? ReadTopLevel()
     {
@@ -583,12 +615,6 @@ internal sealed class LayeParser
         var fields = new List<LayeAst.ParamData>();
         while (!IsEoF && !CheckDelimiter(Delimiter.CloseBrace))
         {
-            if (ReadContainerModifierList() is not { } modifiers)
-            {
-                AssertHasErrors("reading field modifier list");
-                return null;
-            }
-
             var fieldType = TryReadTypeNode(true);
             if (fieldType is null)
             {
@@ -602,7 +628,7 @@ internal sealed class LayeParser
                 return null;
             }
 
-            fields.Add(new(new(modifiers, fieldType, fieldName), null, null));
+            fields.Add(new(new(fieldType, fieldName), null, null));
 
             if (!ExpectDelimiter(Delimiter.SemiColon, out var _))
             {
@@ -691,7 +717,7 @@ internal sealed class LayeParser
                 return null;
             }
 
-            var paramBinding = new LayeAst.BindingData(new(), paramType, paramName);
+            var paramBinding = new LayeAst.BindingData(paramType, paramName);
             paramData.Add(new LayeAst.ParamData(paramBinding, null, null));
 
             if (vaKind != VarArgsKind.None)

@@ -314,6 +314,16 @@ internal sealed class LlvmBackend : IBackend
         var entryBlock = builder.AppendBlock(".entry");
         builder.PositionAtEnd(entryBlock);
 
+        for (int i = 0; i < function.ParameterSymbols.Length; i++)
+        {
+            var param = function.ParameterSymbols[i];
+
+            var paramAddress = builder.BuildAlloca(param.Type!, param.Name);
+            BuildStore(builder.Builder, GetParam(functionValue, (uint)i), paramAddress.Value);
+
+            builder.SetSymbolAddress(param, paramAddress);
+        }
+
         switch (function.Body)
         {
             case LayeCst.BlockFunctionBody block: CompileBlock(builder, block.BodyBlock); break;
