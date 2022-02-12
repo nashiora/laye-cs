@@ -5,7 +5,7 @@
 
 [ ] Operator expressions
     [!] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
-    [ ] Prefix ops (&, *, -, not)
+    [!] Prefix ops (&, *, -, not)
 [ ] Structure operations
     [ ] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
@@ -32,6 +32,8 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
     storage[1] = argv0;
     string[] args = storage[:2];
     // end program startup logic
+
+    bool x = 1 == 1 and 2 == 3;
 
     printf("process invoked with the following arguments:%c", 10);
     // TODO(local): allow indexing a slice

@@ -677,12 +677,14 @@ internal sealed class LlvmBackend : IBackend
                 var secondTestBlock = builder.AppendBlock("logand.right");
                 var continueBlock = builder.AppendBlock("logand.continue");
 
+                builder.BuildBranch(firstTestBlock);
+
                 builder.PositionAtEnd(firstTestBlock);
                 {
                     var firstTest = CompileExpression(builder, logicaland.LeftExpression);
                     builder.BuildStore(firstTest, resultStorage);
 
-                    builder.BuildConditionalBranch(resultStorage, secondTestBlock, continueBlock);
+                    builder.BuildConditionalBranch(builder.BuildLoad(resultStorage), secondTestBlock, continueBlock);
                 }
 
                 builder.PositionAtEnd(secondTestBlock);
@@ -705,12 +707,14 @@ internal sealed class LlvmBackend : IBackend
                 var secondTestBlock = builder.AppendBlock("logor.right");
                 var continueBlock = builder.AppendBlock("logor.continue");
 
+                builder.BuildBranch(firstTestBlock);
+
                 builder.PositionAtEnd(firstTestBlock);
                 {
                     var firstTest = CompileExpression(builder, logicalor.LeftExpression);
                     builder.BuildStore(firstTest, resultStorage);
 
-                    builder.BuildConditionalBranch(resultStorage, continueBlock, secondTestBlock);
+                    builder.BuildConditionalBranch(builder.BuildLoad(resultStorage), continueBlock, secondTestBlock);
                 }
 
                 builder.PositionAtEnd(secondTestBlock);
