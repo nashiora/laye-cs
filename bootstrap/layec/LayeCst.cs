@@ -49,6 +49,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class Negate(Expr Expression) : Expr(Expression.SourceSpan, Expression.Type);
     public sealed record class AddressOf(Expr Expression, AccessKind Access = AccessKind.ReadWrite) : Expr(Expression.SourceSpan, new SymbolType.Pointer(Expression.Type, Access));
+    public sealed record class ValueAt(Expr Expression, SymbolType ElementType) : Expr(Expression.SourceSpan, ElementType);
     public sealed record class LogicalNot(Expr Expression) : Expr(Expression.SourceSpan, SymbolTypes.Bool);
 
     public sealed record class Add(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
@@ -90,6 +91,11 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
     public sealed record class DeadCode(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
+    
+    public sealed record class If(Expr Condition, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, IfBody, ElseBody));
+    public sealed record class While(Expr Condition, Stmt WhileBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, WhileBody, ElseBody));
+    public sealed record class CFor(Stmt? Initializer, Expr? Condition, Stmt? Iterator, Stmt ForBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Initializer, Condition, Iterator, ForBody, ElseBody));
+
 
     public sealed record class BindingDeclaration(LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
         : Stmt(SourceSpan.Combine(new IHasSourceSpan?[] { BindingName, Expression }));

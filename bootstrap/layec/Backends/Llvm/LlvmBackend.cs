@@ -371,6 +371,65 @@ internal sealed class LlvmBackend : IBackend
         {
             case LayeCst.DeadCode: break; // pass on dead code that we left in the cst
 
+            case LayeCst.Block block: CompileBlock(builder, block); break;
+
+            case LayeCst.If ifStmt:
+            {
+                var passBlock = builder.AppendBlock("if.pass");
+                var failBlock = builder.AppendBlock("if.fail");
+                var continueBlock = builder.AppendBlock("if.continue");
+
+                var condition = CompileExpression(builder, ifStmt.Condition);
+                builder.BuildConditionalBranch(condition, passBlock, failBlock);
+
+                builder.PositionAtEnd(passBlock);
+                {
+                    CompileStatement(builder, ifStmt.IfBody);
+                    builder.BuildBranch(continueBlock);
+                }
+
+                builder.PositionAtEnd(failBlock);
+                {
+                    if (ifStmt.ElseBody is not null)
+                        CompileStatement(builder, ifStmt.ElseBody);
+                    builder.BuildBranch(continueBlock);
+                }
+
+                builder.PositionAtEnd(continueBlock);
+            } break;
+
+            case LayeCst.While whileStmt:
+            {
+                var recheckBlock = builder.AppendBlock("while.check");
+                var passBlock = builder.AppendBlock("while.pass");
+                var failBlock = builder.AppendBlock("while.fail");
+                var continueBlock = builder.AppendBlock("while.continue");
+
+                var firstCondition = CompileExpression(builder, whileStmt.Condition);
+                builder.BuildConditionalBranch(firstCondition, passBlock, failBlock);
+
+                builder.PositionAtEnd(recheckBlock);
+                {
+                    var condition = CompileExpression(builder, whileStmt.Condition);
+                    builder.BuildConditionalBranch(condition, passBlock, continueBlock);
+                }
+
+                builder.PositionAtEnd(passBlock);
+                {
+                    CompileStatement(builder, whileStmt.WhileBody);
+                    builder.BuildBranch(recheckBlock);
+                }
+
+                builder.PositionAtEnd(failBlock);
+                {
+                    if (whileStmt.ElseBody is not null)
+                        CompileStatement(builder, whileStmt.ElseBody);
+                    builder.BuildBranch(continueBlock);
+                }
+
+                builder.PositionAtEnd(continueBlock);
+            } break;
+
             case LayeCst.BindingDeclaration bindingDecl:
             {
                 var bindingAddress = builder.BuildAlloca(bindingDecl.BindingSymbol.Type!, bindingDecl.BindingName.Image);
@@ -489,6 +548,13 @@ internal sealed class LlvmBackend : IBackend
                 return intValue;
             }
 
+            case LayeCst.Float _float:
+            {
+                TypedLlvmValue floatValue;
+                floatValue = builder.ConstFloat(_float.Type, _float.Literal.LiteralValue);
+                return floatValue;
+            }
+
             case LayeCst.StringLengthLookup stringLengthLookup:
             {
                 // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
@@ -544,6 +610,11 @@ internal sealed class LlvmBackend : IBackend
             }
 
             case LayeCst.AddressOf addr: return CompileExpressionAsLValue(builder, addr.Expression);
+            case LayeCst.ValueAt valueAt:
+            {
+                var valueAddress = CompileExpression(builder, valueAt.Expression);
+                return builder.BuildLoad(valueAddress);
+            }
 
             case LayeCst.LogicalNot not:
             {
@@ -848,7 +919,7 @@ internal sealed class LlvmFunctionBuilder
     {
         bool signed = intType is SymbolType.Integer _int ? _int.Signed :
             (intType is SymbolType.SizedInteger _ix ? _ix.Signed :
-            throw new ArgumentException("type is not integer", nameof(intType)));
+            throw new ArgumentException($"type {intType} is not integer", nameof(intType)));
 
         var constIntValue = ConstInt(Backend.GetLlvmType(intType), constantValue, signed);
         return new LlvmValue<TIntType>(constIntValue, intType);
@@ -932,6 +1003,15 @@ internal sealed class LlvmFunctionBuilder
         return new TypedLlvmValue(loadValue, address.Type.ElementType);
     }
 
+    public TypedLlvmValue BuildLoad(TypedLlvmValue address, string name = "")
+    {
+        CheckCanBuild();
+        Debug.Assert(address.Type is SymbolType.Pointer);
+        var pointerType = (SymbolType.Pointer)address.Type;
+        var loadValue = LLVM.BuildLoad(Builder, address.Value, name);
+        return new TypedLlvmValue(loadValue, pointerType.ElementType);
+    }
+
     public void BuildStore(TypedLlvmValue value, LlvmValue<SymbolType.Pointer> address)
     {
         CheckCanBuild();
@@ -986,8 +1066,11 @@ internal sealed class LlvmFunctionBuilder
     {
         CheckCanBuild();
         Debug.Assert(bufferValue.Type is SymbolType.Buffer);
-        if (offset is not null) Debug.Assert(offset.Type is SymbolType.Integer);
-        Debug.Assert(count.Type is SymbolType.Integer);
+        if (offset is not null) Debug.Assert(offset.Type.IsInteger());
+        Debug.Assert(count.Type.IsInteger());
+
+        if (count.Type != SymbolTypes.UInt)
+            count = new(BuildIntCast(Builder, count.Value, Backend.GetLlvmType(SymbolTypes.UInt), ""), SymbolTypes.UInt);
 
         var sliceType = new SymbolType.Slice(((SymbolType.Buffer)bufferValue.Type).ElementType);
 
@@ -999,6 +1082,9 @@ internal sealed class LlvmFunctionBuilder
         var slicePointerAddress = BuildStructGEP(Builder, sliceStorageAddress.Value, 1, "slice_value.pointer");
         if (offset is not null)
         {
+            if (offset.Type != SymbolTypes.UInt)
+                offset = new(BuildIntCast(Builder, offset.Value, Backend.GetLlvmType(SymbolTypes.UInt), ""), SymbolTypes.UInt);
+
             var bufferAsInt = BuildIntToPtr(Builder, bufferValue.Value, Backend.GetLlvmType(SymbolTypes.UInt), "");
             var bufferPlusOffset = LLVM.BuildAdd(Builder, bufferAsInt, offset.Value, "");
             var bufferAsPtr = BuildPtrToInt(Builder, bufferPlusOffset, Backend.GetLlvmType(bufferValue.Type), "");

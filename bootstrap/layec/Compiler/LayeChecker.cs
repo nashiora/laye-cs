@@ -533,6 +533,102 @@ internal sealed class LayeChecker
                 return new LayeCst.Assignment(targetExpression, valueExpression);
             }
 
+            case LayeAst.Block blockStmt:
+            {
+                PushScope(new SymbolTable(CurrentScope));
+
+                var body = new LayeCst.Stmt[blockStmt.Body.Length];
+                for (int i = 0; i < body.Length; i++)
+                {
+                    var stmt = CheckStatement(blockStmt.Body[i]);
+                    if (stmt is null)
+                    {
+                        AssertHasErrors("checking statement in block");
+                        return null;
+                    }
+
+                    body[i] = stmt;
+                }
+
+                PopScope();
+
+                return new LayeCst.Block(blockStmt.SourceSpan, body);
+            }
+
+            case LayeAst.If ifStmt:
+            {
+                var condition = CheckExpression(ifStmt.Condition);
+                if (condition is null)
+                {
+                    AssertHasErrors("checking if condition");
+                    return null;
+                }
+
+                condition = CheckImplicitTypeCast(condition, SymbolTypes.Bool);
+                if (condition is null)
+                {
+                    AssertHasErrors("checking if condition implicit conversion to bool");
+                    return null;
+                }
+
+                var passBody = CheckStatement(ifStmt.IfBody);
+                if (passBody is null)
+                {
+                    AssertHasErrors("checking if pass body");
+                    return null;
+                }
+
+                LayeCst.Stmt? failBody = null;
+                if (ifStmt.ElseBody is not null)
+                {
+                    failBody = CheckStatement(ifStmt.ElseBody);
+                    if (failBody is null)
+                    {
+                        AssertHasErrors("checking if fail body");
+                        return null;
+                    }
+                }
+
+                return new LayeCst.If(condition, passBody, failBody);
+            }
+
+            case LayeAst.While whileStmt:
+            {
+                var condition = CheckExpression(whileStmt.Condition);
+                if (condition is null)
+                {
+                    AssertHasErrors("checking while condition");
+                    return null;
+                }
+
+                condition = CheckImplicitTypeCast(condition, SymbolTypes.Bool);
+                if (condition is null)
+                {
+                    AssertHasErrors("checking while condition implicit conversion to bool");
+                    return null;
+                }
+
+                var passBody = CheckStatement(whileStmt.WhileBody);
+                if (passBody is null)
+                {
+                    AssertHasErrors("checking while pass body");
+                    return null;
+                }
+
+                LayeCst.Stmt? failBody = null;
+                if (whileStmt.ElseBody is not null)
+                {
+                    failBody = CheckStatement(whileStmt.ElseBody);
+                    if (failBody is null)
+                    {
+                        AssertHasErrors("checking while fail body");
+                        return null;
+                    }
+                }
+
+                return new LayeCst.While(condition, passBody, failBody);
+            }
+
             default:
             {
                 m_diagnostics.Add(new Diagnostic.Error(statement.SourceSpan, "unrecognized statement type"));
@@ -668,11 +764,17 @@ internal sealed class LayeChecker
                             return null;
                         }
 
-                        var index = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
-                        if (index is null)
+                        LayeCst.Expr index = indices[0];
+                        if (!index.Type.IsInteger() || index.Type is SymbolType.UntypedInteger)
                         {
-                            AssertHasErrors("checking buffer index implicit cast to uint");
-                            return null;
+                            var newIndex = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
+                            if (newIndex is null)
+                            {
+                                AssertHasErrors("checking buffer index implicit cast to uint");
+                                return null;
+                            }
+
+                            index = newIndex;
                         }
 
                         return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, bufferType.ElementType);
@@ -686,11 +788,17 @@ internal sealed class LayeChecker
                             return null;
                         }
 
-                        var index = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
-                        if (index is null)
+                        LayeCst.Expr index = indices[0];
+                        if (!index.Type.IsInteger() || index.Type is SymbolType.UntypedInteger)
                         {
-                            AssertHasErrors("checking slice index implicit cast to uint");
-                            return null;
+                            var newIndex = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
+                            if (newIndex is null)
+                            {
+                                AssertHasErrors("checking slice index implicit cast to uint");
+                                return null;
+                            }
+
+                            index = newIndex;
                         }
 
                         return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, sliceType.ElementType);
@@ -727,7 +835,7 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                if (offsetExpr is not null)
+                if (offsetExpr is not null && (!offsetExpr.Type.IsInteger() || offsetExpr.Type is SymbolType.UntypedInteger))
                 {
                     offsetExpr = CheckImplicitTypeCast(offsetExpr, new SymbolType.Integer(false));
                     if (offsetExpr is null)
@@ -737,7 +845,7 @@ internal sealed class LayeChecker
                     }
                 }
 
-                if (countExpr is not null)
+                if (countExpr is not null && (!countExpr.Type.IsInteger() || countExpr.Type is SymbolType.UntypedInteger))
                 {
                     countExpr = CheckImplicitTypeCast(countExpr, new SymbolType.Integer(false));
                     if (countExpr is null)
@@ -806,6 +914,17 @@ internal sealed class LayeChecker
                         }
 
                         return new LayeCst.AddressOf(expr);
+                    }
+
+                    case Operator.Multiply:
+                    {
+                        if (expr.Type is not SymbolType.Pointer pointerType)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expr.SourceSpan, "cannot dereference non-pointer expression"));
+                            return null;
+                        }
+
+                        return new LayeCst.ValueAt(expr, pointerType.ElementType);
                     }
                 }
 

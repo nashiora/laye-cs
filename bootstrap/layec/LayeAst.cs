@@ -201,11 +201,6 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Invoke(Expr TargetExpression, LayeToken.Delimiter OpenArgs, Expr[] Arguments, LayeToken.Delimiter[] ArgumentDelimiters, LayeToken.Delimiter CloseArgs)
         : Expr(new SourceSpan(TargetExpression.SourceSpan.StartLocation, CloseArgs.SourceSpan.EndLocation));
 
-    public sealed record class If(LayeToken.Keyword IfKeyword, LayeToken.Delimiter ConditionStart, LayeToken.Delimiter ConditionEnd, Expr Condition, Expr IfBody, LayeToken.Keyword? ElseKeyword, Expr? ElseBody)
-        : Expr(new SourceSpan(IfKeyword.SourceSpan.StartLocation, (ElseBody ?? IfBody).SourceSpan.EndLocation));
-    public sealed record class While(LayeToken.Keyword WhileKeyword, LayeToken.Delimiter ConditionStart, LayeToken.Delimiter ConditionEnd, Expr Condition, Expr WhileBody, LayeToken.Keyword? ElseKeyword, Expr? ElseBody)
-        : Expr(new SourceSpan(WhileKeyword.SourceSpan.StartLocation, (ElseBody ?? WhileBody).SourceSpan.EndLocation));
-
 #endregion
 
 #region Statements
@@ -217,6 +212,10 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class Block(LayeToken.Delimiter Start, LayeToken.Delimiter End, Stmt[] Body)
         : Stmt(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));
+
+    public sealed record class If(Expr Condition, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, IfBody, ElseBody));
+    public sealed record class While(Expr Condition, Stmt WhileBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, WhileBody, ElseBody));
+    public sealed record class CFor(Stmt? Initializer, Expr? Condition, Stmt? Iterator, Stmt ForBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Initializer, Condition, Iterator, ForBody, ElseBody));
 
     public sealed record class FileNamespaceDeclaration(LayeToken.Keyword NamespaceKeyword, NamePathPart[] NameParts, LayeToken.Delimiter NameDelimiters, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(NamespaceKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));

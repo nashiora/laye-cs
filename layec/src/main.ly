@@ -2,10 +2,11 @@
 
 // X finished
 // ! in progress
+// T needs testing, but looks to be implemented
 
-[ ] Operator expressions
-    [!] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
-    [!] Prefix ops (&, *, -, not)
+[T] Operator expressions
+    [T] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
+    [T] Prefix ops (&, *, -, not)
 [ ] Structure operations
     [ ] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
@@ -26,16 +27,28 @@
 void main(i32 argc, u8 readonly[*] readonly[*] argv)
 {
     // program startup logic (if we keep the idea of passing the program args to main like C and friends)
+    /*
     string[*] storage = memory_allocate((8 + 8) * 2); // sizeof(uint) + sizeof(rawptr) = 8 + 8 = 16 (on my machine)
     string argv0 = argv[0][:strlen(argv[0])];
     storage[0] = argv0;
     storage[1] = argv0;
     string[] args = storage[:2];
+    /*/
+    string[*] argvStorage = memory_allocate((8 + 8) * argc);
+    uint argvCounter = 0;
+    while (argvCounter < argc)
+    {
+        argvStorage[argvCounter] = argv[argvCounter][:strlen(argv[argvCounter])];
+        argvCounter = argvCounter + 1;
+    }
+    string[] args = argvStorage[:argc];
+    //*/
     // end program startup logic
 
-    bool x = 1 == 1 and 2 == 3;
+    if (1 == 1.0) printf("Hello, hunter!%c", 10);
+    else printf("Hello, world!%c", 10);
 
     printf("process invoked with the following arguments:%c", 10);
     // TODO(local): allow indexing a slice
-    printf("  %.*s%c", args[1].length, args[1].data, 10);
+    printf("  %.*s%c", args[0].length, args[0].data, 10);
 }

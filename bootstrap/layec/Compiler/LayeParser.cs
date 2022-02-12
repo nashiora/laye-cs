@@ -126,6 +126,7 @@ internal sealed class LayeParser
     }
 
     private bool ExpectIdentifier(out LayeToken.Identifier identifier) => Expect(out identifier);
+    private bool ExpectDelimiter(Delimiter kind) => Expect(out LayeToken.Delimiter delimiter, delimiter => delimiter.Kind == kind);
     private bool ExpectDelimiter(Delimiter kind, out LayeToken.Delimiter delimiter) => Expect(out delimiter, delimiter => delimiter.Kind == kind);
     private bool ExpectOperator(Operator kind, out LayeToken.Operator @operator) => Expect(out @operator, @operator => @operator.Kind == kind);
     private bool ExpectKeyword(Keyword kind, out LayeToken.Keyword keyword) => Expect(out keyword, keyword => keyword.Kind == kind);
@@ -837,6 +838,94 @@ internal sealed class LayeParser
 
             return new LayeAst.Return(returnKw, returnValue);
         }
+        else if (CheckKeyword(Keyword.If))
+        {
+            Advance(); // `if`
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open if condition"));
+                return null;
+            }
+
+            var condition = ReadExpression();
+            if (condition is null)
+            {
+                AssertHasErrors("reading if condition");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to open if condition"));
+                return null;
+            }
+
+            var passBody = ReadStatement();
+            if (passBody is null)
+            {
+                AssertHasErrors("reading if body");
+                return null;
+            }
+
+            LayeAst.Stmt? failBody = null;
+            if (CheckKeyword(Keyword.Else))
+            {
+                Advance(); // `else`
+                failBody = ReadStatement();
+                if (failBody is null)
+                {
+                    AssertHasErrors("reading if else body");
+                    return null;
+                }
+            }
+
+            return new LayeAst.If(condition, passBody, failBody);
+        }
+        else if (CheckKeyword(Keyword.While))
+        {
+            Advance(); // `while`
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open while condition"));
+                return null;
+            }
+
+            var condition = ReadExpression();
+            if (condition is null)
+            {
+                AssertHasErrors("reading while condition");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to open while condition"));
+                return null;
+            }
+
+            var passBody = ReadStatement();
+            if (passBody is null)
+            {
+                AssertHasErrors("reading while body");
+                return null;
+            }
+
+            LayeAst.Stmt? failBody = null;
+            if (CheckKeyword(Keyword.Else))
+            {
+                Advance(); // `else`
+                failBody = ReadStatement();
+                if (failBody is null)
+                {
+                    AssertHasErrors("reading while else body");
+                    return null;
+                }
+            }
+
+            return new LayeAst.While(condition, passBody, failBody);
+        }
+        else if (CheckDelimiter(Delimiter.OpenBrace))
+            return ReadBlock();
 
         int startPosition = m_tokenIndex;
         if (TryReadTypeNode(false) is { } bindingType)
