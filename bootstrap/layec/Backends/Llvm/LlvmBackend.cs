@@ -12,6 +12,7 @@ internal sealed class LlvmBackend : IBackend
     public LLVMContextRef Context;
     public LLVMModuleRef Module;
 
+#if false
     public readonly SymbolType.Integer IntType = new(true);
     public readonly SymbolType.Integer UIntType = new(false);
 
@@ -25,6 +26,7 @@ internal sealed class LlvmBackend : IBackend
     public readonly SymbolType.Buffer ReadOnlyU8BufType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
     public readonly SymbolType.Slice U8SlcType = new(new SymbolType.SizedInteger(false, 8));
     public readonly SymbolType.Slice ReadOnlyU8SlcType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
+#endif
 
     private readonly Dictionary<Symbol.Function, LLVMValueRef> m_functions = new();
 
@@ -69,6 +71,13 @@ internal sealed class LlvmBackend : IBackend
                 }
             }
         }
+
+        var passManager = LLVM.CreateFunctionPassManagerForModule(Module);
+        //LLVM.AddInstructionCombiningPass(passManager);
+        //LLVM.InitializeFunctionPassManager(passManager);
+
+        foreach (var function in m_functions.Values)
+            LLVM.RunFunctionPassManager(passManager, function);
 
         irCompilerTimer.Stop();
 
@@ -192,7 +201,8 @@ internal sealed class LlvmBackend : IBackend
             case SymbolType.Void: return VoidTypeInContext(Context);
             case SymbolType.Rune: return Int32TypeInContext(Context);
 
-            case SymbolType.Bool: return GetLlvmType(UIntType);
+            //case SymbolType.Bool: return GetLlvmType(SymbolTypes.UInt);
+            case SymbolType.Bool: return Int1TypeInContext(Context);
             case SymbolType.SizedBool _bx: return IntTypeInContext(Context, _bx.BitCount);
 
             case SymbolType.Integer: return Int64TypeInContext(Context);
@@ -221,7 +231,7 @@ internal sealed class LlvmBackend : IBackend
             }
 #endif
 
-            case SymbolType.String: return StructTypeInContext(Context, new LLVMTypeRef[] { GetLlvmType(UIntType), PointerType(Int8TypeInContext(Context), 0) }, false);
+            case SymbolType.String: return StructTypeInContext(Context, new LLVMTypeRef[] { GetLlvmType(SymbolTypes.UInt), PointerType(Int8TypeInContext(Context), 0) }, false);
 
             case SymbolType.RawPtr: return PointerType(Int8TypeInContext(Context), 0);
             case SymbolType.Array array: return ArrayType(GetLlvmType(array.ElementType), array.ElementCount);
@@ -230,7 +240,7 @@ internal sealed class LlvmBackend : IBackend
             case SymbolType.Slice slice:
             {
                 var dataPointerType = PointerType(GetLlvmType(slice.ElementType), 0);
-                return StructTypeInContext(Context, new LLVMTypeRef[] { GetLlvmType(UIntType), dataPointerType }, false);
+                return StructTypeInContext(Context, new LLVMTypeRef[] { GetLlvmType(SymbolTypes.UInt), dataPointerType }, false);
             }
 
             case SymbolType.Function function:
@@ -418,13 +428,13 @@ internal sealed class LlvmBackend : IBackend
                     case SymbolType.Buffer bufferType:
                     {
                         Debug.Assert(indices.Length == 1);
-                        return builder.GetBufferIndexAddress(target, indices[0]);
+                        return builder.BuildGetBufferIndexAddress(target, indices[0]);
                     }
 
                     case SymbolType.Slice sliceType:
                     {
                         Debug.Assert(indices.Length == 1);
-                        return builder.GetSliceIndexAddress(target, indices[0]);
+                        return builder.BuildGetSliceIndexAddress(target, indices[0]);
                     }
 
                     default:
@@ -458,7 +468,7 @@ internal sealed class LlvmBackend : IBackend
             case LayeCst.String _string:
             {
                 TypedLlvmValue stringValue;
-                if (_string.Type == ReadOnlyU8BufType)
+                if (_string.Type == SymbolTypes.ReadOnlyU8Buffer)
                     stringValue = builder.BuildGlobalStringBuffer(_string.Literal.LiteralValue);
                 else if (_string.Type is SymbolType.String)
                     stringValue = builder.BuildGlobalString(_string.Literal.LiteralValue);
@@ -483,7 +493,7 @@ internal sealed class LlvmBackend : IBackend
             {
                 // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
                 var stringValue = CompileExpression(builder, stringLengthLookup.TargetExpression);
-                var stringStorageAddress = builder.BuildAlloca(StringType, "string_tempstorage");
+                var stringStorageAddress = builder.BuildAlloca(SymbolTypes.String, "string_tempstorage");
                 builder.BuildStore(stringValue, stringStorageAddress);
                 return builder.BuildLoadStringLengthFromAddress(stringStorageAddress);
             }
@@ -492,7 +502,7 @@ internal sealed class LlvmBackend : IBackend
             {
                 // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
                 var stringValue = CompileExpression(builder, stringDataLookup.TargetExpression);
-                var stringStorageAddress = builder.BuildAlloca(StringType, "string_tempstorage");
+                var stringStorageAddress = builder.BuildAlloca(SymbolTypes.String, "string_tempstorage");
                 builder.BuildStore(stringValue, stringStorageAddress);
                 return builder.BuildLoadStringDataFromAddress(stringStorageAddress);
             }
@@ -555,6 +565,152 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildDivide(left, right);
             }
 
+            case LayeCst.Remainder remainder:
+            {
+                var left = CompileExpression(builder, remainder.LeftExpression);
+                var right = CompileExpression(builder, remainder.RightExpression);
+                return builder.BuildRemainder(left, right);
+            }
+
+            case LayeCst.CompareEqual equal:
+            {
+                var left = CompileExpression(builder, equal.LeftExpression);
+                var right = CompileExpression(builder, equal.RightExpression);
+                return builder.BuildEqual(left, right);
+            }
+
+            case LayeCst.CompareNotEqual notEqual:
+            {
+                var left = CompileExpression(builder, notEqual.LeftExpression);
+                var right = CompileExpression(builder, notEqual.RightExpression);
+                return builder.BuildNotEqual(left, right);
+            }
+
+            case LayeCst.CompareLess less:
+            {
+                var left = CompileExpression(builder, less.LeftExpression);
+                var right = CompileExpression(builder, less.RightExpression);
+                return builder.BuildLess(left, right);
+            }
+
+            case LayeCst.CompareLessEqual lessEqual:
+            {
+                var left = CompileExpression(builder, lessEqual.LeftExpression);
+                var right = CompileExpression(builder, lessEqual.RightExpression);
+                return builder.BuildLessEqual(left, right);
+            }
+
+            case LayeCst.CompareGreater greater:
+            {
+                var left = CompileExpression(builder, greater.LeftExpression);
+                var right = CompileExpression(builder, greater.RightExpression);
+                return builder.BuildGreater(left, right);
+            }
+
+            case LayeCst.CompareGreaterEqual greaterEqual:
+            {
+                var left = CompileExpression(builder, greaterEqual.LeftExpression);
+                var right = CompileExpression(builder, greaterEqual.RightExpression);
+                return builder.BuildGreaterEqual(left, right);
+            }
+
+            case LayeCst.LeftShift lsh:
+            {
+                var left = CompileExpression(builder, lsh.LeftExpression);
+                var right = CompileExpression(builder, lsh.RightExpression);
+                return builder.BuildLeftShift(left, right);
+            }
+
+            case LayeCst.RightShift rsh:
+            {
+                var left = CompileExpression(builder, rsh.LeftExpression);
+                var right = CompileExpression(builder, rsh.RightExpression);
+                return builder.BuildRightShift(left, right);
+            }
+
+            case LayeCst.BitwiseAnd bitand:
+            {
+                var left = CompileExpression(builder, bitand.LeftExpression);
+                var right = CompileExpression(builder, bitand.RightExpression);
+                return builder.BuildBitAnd(left, right);
+            }
+
+            case LayeCst.BitwiseOr bitor:
+            {
+                var left = CompileExpression(builder, bitor.LeftExpression);
+                var right = CompileExpression(builder, bitor.RightExpression);
+                return builder.BuildBitOr(left, right);
+            }
+
+            case LayeCst.BitwiseXor bitxor:
+            {
+                var left = CompileExpression(builder, bitxor.LeftExpression);
+                var right = CompileExpression(builder, bitxor.RightExpression);
+                return builder.BuildBitXor(left, right);
+            }
+
+            case LayeCst.BitwiseComplement bitcompl:
+            {
+                var value = CompileExpression(builder, bitcompl.Expression);
+                return builder.BuildBitComplemet(value);
+            }
+
+            case LayeCst.LogicalAnd logicaland:
+            {
+                var resultStorage = builder.BuildAlloca(SymbolTypes.Bool, "logand.result");
+
+                var firstTestBlock = builder.AppendBlock("logand.left");
+                var secondTestBlock = builder.AppendBlock("logand.right");
+                var continueBlock = builder.AppendBlock("logand.continue");
+
+                builder.PositionAtEnd(firstTestBlock);
+                {
+                    var firstTest = CompileExpression(builder, logicaland.LeftExpression);
+                    builder.BuildStore(firstTest, resultStorage);
+
+                    builder.BuildConditionalBranch(resultStorage, secondTestBlock, continueBlock);
+                }
+
+                builder.PositionAtEnd(secondTestBlock);
+                {
+                    var secondTest = CompileExpression(builder, logicaland.RightExpression);
+                    builder.BuildStore(secondTest, resultStorage);
+
+                    builder.BuildBranch(continueBlock);
+                }
+
+                builder.PositionAtEnd(continueBlock);
+                return builder.BuildLoad(resultStorage);
+            }
+
+            case LayeCst.LogicalOr logicalor:
+            {
+                var resultStorage = builder.BuildAlloca(SymbolTypes.Bool, "logor.result");
+
+                var firstTestBlock = builder.AppendBlock("logor.left");
+                var secondTestBlock = builder.AppendBlock("logor.right");
+                var continueBlock = builder.AppendBlock("logor.continue");
+
+                builder.PositionAtEnd(firstTestBlock);
+                {
+                    var firstTest = CompileExpression(builder, logicalor.LeftExpression);
+                    builder.BuildStore(firstTest, resultStorage);
+
+                    builder.BuildConditionalBranch(resultStorage, continueBlock, secondTestBlock);
+                }
+
+                builder.PositionAtEnd(secondTestBlock);
+                {
+                    var secondTest = CompileExpression(builder, logicalor.RightExpression);
+                    builder.BuildStore(secondTest, resultStorage);
+
+                    builder.BuildBranch(continueBlock);
+                }
+
+                builder.PositionAtEnd(continueBlock);
+                return builder.BuildLoad(resultStorage);
+            }
+
             case LayeCst.TypeCast typeCast:
             {
                 var targetValue = CompileExpression(builder, typeCast.Expression);
@@ -590,6 +746,13 @@ internal sealed class LlvmBackend : IBackend
                             if (valueBufferType.ElementType == bufferType.ElementType)
                                 return new LlvmValue<SymbolType.Buffer>(targetValue.Value, bufferType);
                         }
+                    } break;
+
+                    case SymbolType.Integer:
+                    case SymbolType.SizedInteger:
+                    {
+                        if (targetValue.Type.IsNumeric())
+                            return new TypedLlvmValue(BuildIntCast(builder.Builder, targetValue.Value, GetLlvmType(typeCast.Type), ""), typeCast.Type);
                     } break;
                 }
 
@@ -685,18 +848,20 @@ internal sealed class LlvmFunctionBuilder
 
     public LlvmValue<SymbolType.Buffer> BuildGlobalStringBuffer(string value, string name = "global_string_buffer")
     {
+        CheckCanBuild();
         var globalStringPtr = BuildGlobalStringPtr(Builder, value, name);
-        return new LlvmValue<SymbolType.Buffer>(globalStringPtr, Backend.ReadOnlyU8BufType);
+        return new LlvmValue<SymbolType.Buffer>(globalStringPtr, SymbolTypes.ReadOnlyU8Buffer);
     }
 
     public LlvmValue<SymbolType.String> BuildGlobalString(string value, string name = "global_string")
     {
+        CheckCanBuild();
         ulong stringLength = (ulong)System.Text.Encoding.UTF8.GetByteCount(value);
 
-        var stringStorageAddress = BuildAlloca(Backend.StringType);
+        var stringStorageAddress = BuildAlloca(SymbolTypes.String);
 
         var stringLengthAddress = BuildStructGEP(Builder, stringStorageAddress.Value, 0, "global_string.value.length");
-        var stringLengthValue = ConstInt(Backend.GetLlvmType(Backend.UIntType), stringLength, false);
+        var stringLengthValue = ConstInt(Backend.GetLlvmType(SymbolTypes.UInt), stringLength, false);
         LLVM.BuildStore(Builder, stringLengthValue, stringLengthAddress);
 
         var stringPointerAddress = BuildStructGEP(Builder, stringStorageAddress.Value, 1, "global_string.value.pointer");
@@ -704,7 +869,7 @@ internal sealed class LlvmFunctionBuilder
         LLVM.BuildStore(Builder, globalStringPtr, stringPointerAddress);
 
         var stringStorageValue = LLVM.BuildLoad(Builder, stringStorageAddress.Value, "global_string.value");
-        return new LlvmValue<SymbolType.String>(stringStorageValue, Backend.StringType);
+        return new LlvmValue<SymbolType.String>(stringStorageValue, SymbolTypes.String);
     }
 
 #if false
@@ -736,6 +901,7 @@ internal sealed class LlvmFunctionBuilder
 
     public LlvmValue<SymbolType.Pointer> BuildAlloca(SymbolType type, string name = "")
     {
+        CheckCanBuild();
         var llvmType = Backend.GetLlvmType(type);
         var allocaAddressResult = LLVM.BuildAlloca(Builder, llvmType, name);
         return new(allocaAddressResult, new SymbolType.Pointer(type));
@@ -743,18 +909,21 @@ internal sealed class LlvmFunctionBuilder
 
     public TypedLlvmValue BuildLoad(LlvmValue<SymbolType.Pointer> address, string name = "")
     {
+        CheckCanBuild();
         var loadValue = LLVM.BuildLoad(Builder, address.Value, name);
         return new TypedLlvmValue(loadValue, address.Type.ElementType);
     }
 
     public void BuildStore(TypedLlvmValue value, LlvmValue<SymbolType.Pointer> address)
     {
+        CheckCanBuild();
         Debug.Assert(value.Type == address.Type.ElementType, $"type checker did not ensure value and address types were the same ({value.Type} != {address.Type.ElementType})");
         LLVM.BuildStore(Builder, value.Value, address.Value);
     }
 
-    public LlvmValue<SymbolType.Pointer> GetBufferIndexAddress(TypedLlvmValue bufferTarget, TypedLlvmValue index)
+    public LlvmValue<SymbolType.Pointer> BuildGetBufferIndexAddress(TypedLlvmValue bufferTarget, TypedLlvmValue index)
     {
+        CheckCanBuild();
         Debug.Assert(bufferTarget.Type is SymbolType.Pointer targetAddr && targetAddr.ElementType is SymbolType.Buffer);
         Debug.Assert(index.Type is SymbolType.Integer);
 
@@ -766,8 +935,9 @@ internal sealed class LlvmFunctionBuilder
         return new(address, new SymbolType.Pointer(bufferElementType));
     }
 
-    public LlvmValue<SymbolType.Pointer> GetSliceIndexAddress(TypedLlvmValue sliceTarget, TypedLlvmValue index)
+    public LlvmValue<SymbolType.Pointer> BuildGetSliceIndexAddress(TypedLlvmValue sliceTarget, TypedLlvmValue index)
     {
+        CheckCanBuild();
         Debug.Assert(sliceTarget.Type is SymbolType.Pointer targetAddr && targetAddr.ElementType is SymbolType.Slice);
         Debug.Assert(index.Type == SymbolTypes.UInt);
 
@@ -782,18 +952,21 @@ internal sealed class LlvmFunctionBuilder
 
     public LlvmValue<SymbolType.Integer> BuildLoadStringLengthFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)
     {
+        CheckCanBuild();
         var lengthAddress = BuildStructGEP(Builder, stringAddress.Value, 0, "string.length.addr");
-        return new(LLVM.BuildLoad(Builder, lengthAddress, "string.length"), Backend.UIntType);
+        return new(LLVM.BuildLoad(Builder, lengthAddress, "string.length"), SymbolTypes.UInt);
     }
 
     public LlvmValue<SymbolType.Buffer> BuildLoadStringDataFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)
     {
+        CheckCanBuild();
         var dataAddress = BuildStructGEP(Builder, stringAddress.Value, 1, "string.data.addr");
-        return new(LLVM.BuildLoad(Builder, dataAddress, "string.data"), Backend.ReadOnlyU8BufType);
+        return new(LLVM.BuildLoad(Builder, dataAddress, "string.data"), SymbolTypes.ReadOnlyU8Buffer);
     }
 
     public LlvmValue<SymbolType.Slice> BuildSliceFromBuffer(TypedLlvmValue bufferValue, TypedLlvmValue? offset, TypedLlvmValue count)
     {
+        CheckCanBuild();
         Debug.Assert(bufferValue.Type is SymbolType.Buffer);
         if (offset is not null) Debug.Assert(offset.Type is SymbolType.Integer);
         Debug.Assert(count.Type is SymbolType.Integer);
@@ -808,7 +981,7 @@ internal sealed class LlvmFunctionBuilder
         var slicePointerAddress = BuildStructGEP(Builder, sliceStorageAddress.Value, 1, "slice_value.pointer");
         if (offset is not null)
         {
-            var bufferAsInt = BuildIntToPtr(Builder, bufferValue.Value, Backend.GetLlvmType(Backend.UIntType), "");
+            var bufferAsInt = BuildIntToPtr(Builder, bufferValue.Value, Backend.GetLlvmType(SymbolTypes.UInt), "");
             var bufferPlusOffset = LLVM.BuildAdd(Builder, bufferAsInt, offset.Value, "");
             var bufferAsPtr = BuildPtrToInt(Builder, bufferPlusOffset, Backend.GetLlvmType(bufferValue.Type), "");
             LLVM.BuildStore(Builder, bufferAsPtr, slicePointerAddress);
@@ -821,10 +994,11 @@ internal sealed class LlvmFunctionBuilder
 
     public LlvmValue<SymbolType.String> BuildSliceToString(TypedLlvmValue sliceValue)
     {
+        CheckCanBuild();
         Debug.Assert(sliceValue.Type is SymbolType.Slice);
 
         var sliceStorageAddress = BuildAlloca(sliceValue.Type);
-        var stringStorageAddress = BuildAlloca(Backend.StringType);
+        var stringStorageAddress = BuildAlloca(SymbolTypes.String);
 
         LLVM.BuildStore(Builder, sliceValue.Value, sliceStorageAddress.Value);
 
@@ -843,11 +1017,12 @@ internal sealed class LlvmFunctionBuilder
         LLVM.BuildStore(Builder, stringPointerValue, stringPointerAddress);
 
         var stringStorageValue = LLVM.BuildLoad(Builder, stringStorageAddress.Value, "slice_to_string.value");
-        return new LlvmValue<SymbolType.String>(stringStorageValue, Backend.StringType);
+        return new LlvmValue<SymbolType.String>(stringStorageValue, SymbolTypes.String);
     }
 
     private LLVMValueRef BuildMallocRaw(LLVMValueRef count)
     {
+        CheckCanBuild();
         //LLVM.GetNamedFunction(Backend.Module, "default_allocator");
         var mallocFunction = GetNamedFunction(Backend.Module, "malloc");
         return LLVM.BuildCall(Builder, mallocFunction, new[] { count }, "malloc.result");
@@ -855,39 +1030,41 @@ internal sealed class LlvmFunctionBuilder
 
     private LLVMValueRef BuildMemCpyRaw(LLVMValueRef dest, LLVMValueRef src, LLVMValueRef count)
     {
+        CheckCanBuild();
         var memcpyFunction = GetNamedFunction(Backend.Module, "memcpy");
         return LLVM.BuildCall(Builder, memcpyFunction, new[] { dest, src, count }, "memcpy.result");
     }
 
     public TypedLlvmValue BuildAdd(TypedLlvmValue left, TypedLlvmValue right)
     {
+        CheckCanBuild();
         Debug.Assert(left.Type == right.Type);
         if (left.Type.IsInteger())
             return new(LLVM.BuildAdd(Builder, left.Value, right.Value, ""), left.Type);
-
-        throw new NotImplementedException();
+        else return new(BuildFAdd(Builder, left.Value, right.Value, ""), left.Type);
     }
 
     public TypedLlvmValue BuildSubtract(TypedLlvmValue left, TypedLlvmValue right)
     {
+        CheckCanBuild();
         Debug.Assert(left.Type == right.Type);
         if (left.Type.IsInteger())
             return new(BuildSub(Builder, left.Value, right.Value, ""), left.Type);
-
-        throw new NotImplementedException();
+        else return new(BuildFSub(Builder, left.Value, right.Value, ""), left.Type);
     }
 
     public TypedLlvmValue BuildMultiply(TypedLlvmValue left, TypedLlvmValue right)
     {
+        CheckCanBuild();
         Debug.Assert(left.Type == right.Type);
         if (left.Type.IsInteger())
             return new(BuildMul(Builder, left.Value, right.Value, ""), left.Type);
-
-        throw new NotImplementedException();
+        else return new(BuildFMul(Builder, left.Value, right.Value, ""), left.Type);
     }
 
     public TypedLlvmValue BuildDivide(TypedLlvmValue left, TypedLlvmValue right)
     {
+        CheckCanBuild();
         Debug.Assert(left.Type == right.Type);
         if (left.Type.IsInteger())
         {
@@ -895,8 +1072,177 @@ internal sealed class LlvmFunctionBuilder
                 return new(BuildSDiv(Builder, left.Value, right.Value, ""), left.Type);
             else return new(BuildUDiv(Builder, left.Value, right.Value, ""), left.Type);
         }
+        else return new(BuildFDiv(Builder, left.Value, right.Value, ""), left.Type);
+    }
 
-        throw new NotImplementedException();
+    public TypedLlvmValue BuildRemainder(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildSRem(Builder, left.Value, right.Value, ""), left.Type);
+            else return new(BuildURem(Builder, left.Value, right.Value, ""), left.Type);
+        }
+        else return new(BuildFRem(Builder, left.Value, right.Value, ""), left.Type);
+    }
+
+    public TypedLlvmValue BuildEqual(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntEQ, left.Value, right.Value, ""), SymbolTypes.Bool);
+        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOEQ, left.Value, right.Value, ""), SymbolTypes.Bool);
+    }
+
+    public TypedLlvmValue BuildNotEqual(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntNE, left.Value, right.Value, ""), SymbolTypes.Bool);
+        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealONE, left.Value, right.Value, ""), SymbolTypes.Bool);
+    }
+
+    public TypedLlvmValue BuildLess(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntSLT, left.Value, right.Value, ""), SymbolTypes.Bool);
+            else return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntULT, left.Value, right.Value, ""), SymbolTypes.Bool);
+        }
+        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOLT, left.Value, right.Value, ""), SymbolTypes.Bool);
+    }
+
+    public TypedLlvmValue BuildLessEqual(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntSLE, left.Value, right.Value, ""), SymbolTypes.Bool);
+            else return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntULE, left.Value, right.Value, ""), SymbolTypes.Bool);
+        }
+        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOLE, left.Value, right.Value, ""), SymbolTypes.Bool);
+    }
+
+    public TypedLlvmValue BuildGreater(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntSGT, left.Value, right.Value, ""), SymbolTypes.Bool);
+            else return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntUGT, left.Value, right.Value, ""), SymbolTypes.Bool);
+        }
+        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOGT, left.Value, right.Value, ""), SymbolTypes.Bool);
+    }
+
+    public TypedLlvmValue BuildGreaterEqual(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntSGE, left.Value, right.Value, ""), SymbolTypes.Bool);
+            else return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntUGE, left.Value, right.Value, ""), SymbolTypes.Bool);
+        }
+        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOGE, left.Value, right.Value, ""), SymbolTypes.Bool);
+    }
+
+    public TypedLlvmValue BuildLeftShift(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildShl(Builder, left.Value, right.Value, ""), left.Type);
+        else
+        {
+            Console.WriteLine($"internal compiler error: left shift with non-integer types ({left.Type}, {right.Type}) in LLVM backend");
+            Environment.Exit(1);
+            return default!;
+        }
+    }
+
+    public TypedLlvmValue BuildRightShift(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildAShr(Builder, left.Value, right.Value, ""), left.Type);
+            else return new(BuildLShr(Builder, left.Value, right.Value, ""), left.Type);
+        }
+        else
+        {
+            Console.WriteLine($"internal compiler error: right shift with non-integer types ({left.Type}, {right.Type}) in LLVM backend");
+            Environment.Exit(1);
+            return default!;
+        }
+    }
+
+    public TypedLlvmValue BuildBitAnd(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildAnd(Builder, left.Value, right.Value, ""), left.Type);
+        else
+        {
+            Console.WriteLine($"internal compiler error: bit and with non-integer types ({left.Type}, {right.Type}) in LLVM backend");
+            Environment.Exit(1);
+            return default!;
+        }
+    }
+
+    public TypedLlvmValue BuildBitOr(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildOr(Builder, left.Value, right.Value, ""), left.Type);
+        else
+        {
+            Console.WriteLine($"internal compiler error: bit or with non-integer types ({left.Type}, {right.Type}) in LLVM backend");
+            Environment.Exit(1);
+            return default!;
+        }
+    }
+
+    public TypedLlvmValue BuildBitXor(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        CheckCanBuild();
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildXor(Builder, left.Value, right.Value, ""), left.Type);
+        else
+        {
+            Console.WriteLine($"internal compiler error: bit xor with non-integer types ({left.Type}, {right.Type}) in LLVM backend");
+            Environment.Exit(1);
+            return default!;
+        }
+    }
+
+    public TypedLlvmValue BuildBitComplemet(TypedLlvmValue value)
+    {
+        CheckCanBuild();
+        if (value.Type.IsInteger())
+            return new(BuildNot(Builder, value.Value, ""), value.Type);
+        else
+        {
+            Console.WriteLine($"internal compiler error: bit complement with non-integer type ({value.Type}) in LLVM backend");
+            Environment.Exit(1);
+            return default!;
+        }
     }
 
     public void BuildBranch(LLVMBasicBlockRef block)
@@ -905,6 +1251,15 @@ internal sealed class LlvmFunctionBuilder
         Debug.Assert(m_blocks.Contains(block), "block to branch to does not exist within this function");
 
         BuildBr(Builder, block);
+    }
+
+    public void BuildConditionalBranch(TypedLlvmValue condition, LLVMBasicBlockRef pass, LLVMBasicBlockRef fail)
+    {
+        CheckCanBuild();
+        Debug.Assert(m_blocks.Contains(pass), "block to branch to does not exist within this function");
+        Debug.Assert(m_blocks.Contains(fail), "block to branch to does not exist within this function");
+
+        BuildCondBr(Builder, condition.Value, pass, fail);
     }
 
     public void BuildReturn(TypedLlvmValue value) => BuildRet(Builder, value.Value);
