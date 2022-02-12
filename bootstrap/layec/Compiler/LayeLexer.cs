@@ -246,7 +246,7 @@ internal sealed class LayeLexer
 
             case '%':
                 Advance();
-                return new LayeToken.Operator(new(startLocation, CurrentLocation), Operator.Modulo);
+                return new LayeToken.Operator(new(startLocation, CurrentLocation), Operator.Remainder);
 
             case '&':
                 Advance();

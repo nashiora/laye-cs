@@ -787,14 +787,48 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                switch (prefixExpr.Operator)
+                switch (prefixExpr.Operator.Kind)
                 {
-                    default:
+                    case Operator.Subtract:
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(prefixExpr.Operator.SourceSpan, "unsupported prefix operator"));
-                        return null;
+                        if (!expr.Type.IsNumeric())
+                            break;
+
+                        return new LayeCst.Negate(expr);
+                    }
+
+                    case Operator.BitAnd:
+                    {
+                        if (!expr.CheckIsLValue())
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expr.SourceSpan, "cannot take the address of a non l-value expression"));
+                            return null;
+                        }
+
+                        return new LayeCst.AddressOf(expr);
                     }
                 }
+
+                m_diagnostics.Add(new Diagnostic.Error(prefixExpr.Operator.SourceSpan, "unsupported prefix operator"));
+                return null;
+            }
+
+            case LayeAst.LogicalNot not:
+            {
+                var expr = CheckExpression(not.Expression);
+                if (expr is null)
+                {
+                    AssertHasErrors("checking prefix expression");
+                    return null;
+                }
+
+                if (expr.Type != SymbolTypes.Bool)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(expr.SourceSpan, "cannot perform logical not on non-bool expression"));
+                    return null;
+                }
+
+                return new LayeCst.LogicalNot(expr);
             }
 
             case LayeAst.InfixOperation infixExpr:
@@ -870,9 +904,216 @@ internal sealed class LayeChecker
 
                         return new LayeCst.Divide(leftExpr, rightExpr);
                     }
+
+                    case Operator.Remainder:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.Remainder(leftExpr, rightExpr);
+                    }
+
+                    case Operator.CompareEqual:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.CompareEqual(leftExpr, rightExpr);
+                    }
+
+                    case Operator.CompareNotEqual:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.CompareNotEqual(leftExpr, rightExpr);
+                    }
+
+                    case Operator.CompareLessThan:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.CompareLess(leftExpr, rightExpr);
+                    }
+
+                    case Operator.CompareLessThanOrEqual:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.CompareLessEqual(leftExpr, rightExpr);
+                    }
+
+                    case Operator.CompareGreaterThan:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.CompareGreater(leftExpr, rightExpr);
+                    }
+
+                    case Operator.CompareGreaterThanOrEqual:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.CompareGreaterEqual(leftExpr, rightExpr);
+                    }
+
+                    case Operator.LeftShift:
+                    {
+                        if (!(leftExpr.Type.IsInteger() && rightExpr.Type.IsInteger()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.LeftShift(leftExpr, rightExpr);
+                    }
+
+                    case Operator.RightShift:
+                    {
+                        if (!(leftExpr.Type.IsInteger() && rightExpr.Type.IsInteger()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.RightShift(leftExpr, rightExpr);
+                    }
+
+                    case Operator.BitAnd:
+                    {
+                        if (!(leftExpr.Type.IsInteger() && rightExpr.Type.IsInteger()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.BitwiseAnd(leftExpr, rightExpr);
+                    }
+
+                    case Operator.BitOr:
+                    {
+                        if (!(leftExpr.Type.IsInteger() && rightExpr.Type.IsInteger()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.BitwiseOr(leftExpr, rightExpr);
+                    }
+
+                    case Operator.BitXor:
+                    {
+                        if (!(leftExpr.Type.IsInteger() && rightExpr.Type.IsInteger()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.BitwiseXor(leftExpr, rightExpr);
+                    }
                 }
 
                 m_diagnostics.Add(new Diagnostic.Error(infixExpr.Operator.SourceSpan, $"unsupported infix operator on types {leftExpr.Type} and {rightExpr.Type}"));
+                return null;
+            }
+
+            case LayeAst.LogicalInfixOperation logicalInfixExpr:
+            {
+                var leftExpr = CheckExpression(logicalInfixExpr.LeftExpression);
+                if (leftExpr is null)
+                {
+                    AssertHasErrors("checking left logical infix expression");
+                    return null;
+                }
+
+                leftExpr = CheckImplicitTypeCast(leftExpr, SymbolTypes.Bool);
+                if (leftExpr is null)
+                {
+                    AssertHasErrors("checking left logical infix expression conversion to bool");
+                    return null;
+                }
+
+                var rightExpr = CheckExpression(logicalInfixExpr.RightExpression);
+                if (rightExpr is null)
+                {
+                    AssertHasErrors("checking right logical infix expression");
+                    return null;
+                }
+
+                rightExpr = CheckImplicitTypeCast(rightExpr, SymbolTypes.Bool);
+                if (rightExpr is null)
+                {
+                    AssertHasErrors("checking right logical infix expression conversion to bool");
+                    return null;
+                }
+
+                if (logicalInfixExpr.Keyword.Kind == Keyword.And)
+                    return new LayeCst.LogicalAnd(leftExpr, rightExpr);
+                else if (logicalInfixExpr.Keyword.Kind == Keyword.Or)
+                    return new LayeCst.LogicalOr(leftExpr, rightExpr);
+
+                m_diagnostics.Add(new Diagnostic.Error(logicalInfixExpr.Keyword.SourceSpan, $"internal compiler error: unhandled logical infix keyword"));
                 return null;
             }
 

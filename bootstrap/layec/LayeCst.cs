@@ -47,18 +47,22 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Substring(SourceSpan SourceSpan, Expr TargetExpression, Expr? OffsetExpression, Expr? CountExpression)
         : Expr(SourceSpan, new SymbolType.String());
 
+    public sealed record class Negate(Expr Expression) : Expr(Expression.SourceSpan, Expression.Type);
+    public sealed record class AddressOf(Expr Expression, AccessKind Access = AccessKind.ReadWrite) : Expr(Expression.SourceSpan, new SymbolType.Pointer(Expression.Type, Access));
+    public sealed record class LogicalNot(Expr Expression) : Expr(Expression.SourceSpan, SymbolTypes.Bool);
+
     public sealed record class Add(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class Subtract(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class Multiply(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class Divide(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class Remainder(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     
-    public sealed record class CompareEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
-    public sealed record class CompareNotEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
-    public sealed record class CompareLess(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
-    public sealed record class CompareLessEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
-    public sealed record class CompareGreater(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
-    public sealed record class CompareGreaterEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
+    public sealed record class CompareEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), SymbolTypes.Bool);
+    public sealed record class CompareNotEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), SymbolTypes.Bool);
+    public sealed record class CompareLess(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), SymbolTypes.Bool);
+    public sealed record class CompareLessEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), SymbolTypes.Bool);
+    public sealed record class CompareGreater(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), SymbolTypes.Bool);
+    public sealed record class CompareGreaterEqual(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), SymbolTypes.Bool);
     
     public sealed record class LeftShift(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class RightShift(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);

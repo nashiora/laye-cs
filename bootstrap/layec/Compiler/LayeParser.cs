@@ -1039,13 +1039,6 @@ internal sealed class LayeParser
                 else if (subexpr is LayeAst.Float subfloat)
                     return new LayeAst.Float(new LayeToken.Float(SourceSpan.Combine(prefixOp.SourceSpan, subfloat.SourceSpan), -subfloat.Literal.LiteralValue));
             }
-            else if (prefixOp.Kind == Operator.Add)
-            {
-                if (subexpr is LayeAst.Integer subint)
-                    return new LayeAst.Integer(new LayeToken.Integer(SourceSpan.Combine(prefixOp.SourceSpan, subint.SourceSpan), subint.Literal.LiteralValue));
-                else if (subexpr is LayeAst.Float subfloat)
-                    return new LayeAst.Float(new LayeToken.Float(SourceSpan.Combine(prefixOp.SourceSpan, subfloat.SourceSpan), subfloat.Literal.LiteralValue));
-            }
 
             return new LayeAst.PrefixOperation(prefixOp, subexpr);
         }

@@ -51,7 +51,7 @@ internal enum Operator
     Subtract,
     Multiply,
     Divide,
-    Modulo,
+    Remainder,
 
     BitAnd,
     BitOr,

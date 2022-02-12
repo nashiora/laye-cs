@@ -537,6 +537,20 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildSliceToString(targetValue);
             }
 
+            case LayeCst.Negate negate:
+            {
+                var value = CompileExpression(builder, negate.Expression);
+                return builder.BuildNegate(value);
+            }
+
+            case LayeCst.AddressOf addr: return CompileExpressionAsLValue(builder, addr.Expression);
+
+            case LayeCst.LogicalNot not:
+            {
+                var value = CompileExpression(builder, not.Expression);
+                return builder.BuildNot(value);
+            }
+
             case LayeCst.Add add:
             {
                 var left = CompileExpression(builder, add.LeftExpression);
@@ -1035,6 +1049,20 @@ internal sealed class LlvmFunctionBuilder
         return LLVM.BuildCall(Builder, memcpyFunction, new[] { dest, src, count }, "memcpy.result");
     }
 
+    public TypedLlvmValue BuildNegate(TypedLlvmValue left)
+    {
+        CheckCanBuild();
+        if (left.Type.IsInteger())
+            return new(BuildNeg(Builder, left.Value, ""), left.Type);
+        else return new(BuildFNeg(Builder, left.Value, ""), left.Type);
+    }
+
+    public TypedLlvmValue BuildNot(TypedLlvmValue left)
+    {
+        CheckCanBuild();
+        return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntEQ, left.Value, ConstInt(Int1TypeInContext(Context), 0, false), ""), SymbolTypes.Bool);
+    }
+
     public TypedLlvmValue BuildAdd(TypedLlvmValue left, TypedLlvmValue right)
     {
         CheckCanBuild();
@@ -1236,7 +1264,7 @@ internal sealed class LlvmFunctionBuilder
     {
         CheckCanBuild();
         if (value.Type.IsInteger())
-            return new(BuildNot(Builder, value.Value, ""), value.Type);
+            return new(LLVM.BuildNot(Builder, value.Value, ""), value.Type);
         else
         {
             Console.WriteLine($"internal compiler error: bit complement with non-integer type ({value.Type}) in LLVM backend");
