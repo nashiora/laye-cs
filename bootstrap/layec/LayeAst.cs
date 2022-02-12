@@ -146,6 +146,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class SliceType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Delimiter CloseBracket)
         : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
+#if false // less useful types for now
     /// <summary>
     /// Examples: 
     ///   - u8[dynamic]
@@ -161,17 +162,18 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     /// </summary>
     public sealed record class ContainerType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeAst[] Elements, LayeToken.Delimiter[] ElementDelimiters, LayeToken.Delimiter CloseBracket)
         : Type(SourceSpan.Combine(ElementType, CloseBracket));
+#endif
 
     public sealed record class FunctionType(FunctionModifiers Modifiers, Type ReturnType, Type[] ParameterTypes, VarArgsKind VarArgsKind)
         : Type(SourceSpan.Combine(Modifiers, ReturnType));
 
-    #endregion
+#endregion
 
-    #region Expressions
+#region Expressions
 
     public abstract record class Expr(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
-    public sealed record class Integer(LayeToken.Integer Literal, bool Signed = true) : Expr(Literal.SourceSpan);
+    public sealed record class Integer(LayeToken.Integer Literal, bool Signed = false) : Expr(Literal.SourceSpan);
     public sealed record class Float(LayeToken.Float Literal) : Expr(Literal.SourceSpan);
     public sealed record class Bool(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
     public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan);
@@ -186,7 +188,14 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class GroupedExpression(LayeToken.Delimiter OpenGroup, Expr Expression, LayeToken.Delimiter CloseGroup)
         : Expr(new SourceSpan(OpenGroup.SourceSpan.StartLocation, CloseGroup.SourceSpan.EndLocation));
 
+    public sealed record class PrefixOperation(LayeToken.Operator Operator, Expr Expression)
+        : Expr(SourceSpan.Combine(Operator, Expression));
+    public sealed record class LogicalNot(Expr Expression)
+        : Expr(Expression.SourceSpan);
+
     public sealed record class InfixOperation(Expr LeftExpression, LayeToken.Operator Operator, Expr RightExpression)
+        : Expr(SourceSpan.Combine(LeftExpression, RightExpression));
+    public sealed record class LogicalInfixOperation(Expr LeftExpression, LayeToken.Keyword Keyword, Expr RightExpression)
         : Expr(SourceSpan.Combine(LeftExpression, RightExpression));
 
     public sealed record class Invoke(Expr TargetExpression, LayeToken.Delimiter OpenArgs, Expr[] Arguments, LayeToken.Delimiter[] ArgumentDelimiters, LayeToken.Delimiter CloseArgs)
@@ -197,9 +206,9 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class While(LayeToken.Keyword WhileKeyword, LayeToken.Delimiter ConditionStart, LayeToken.Delimiter ConditionEnd, Expr Condition, Expr WhileBody, LayeToken.Keyword? ElseKeyword, Expr? ElseBody)
         : Expr(new SourceSpan(WhileKeyword.SourceSpan.StartLocation, (ElseBody ?? WhileBody).SourceSpan.EndLocation));
 
-    #endregion
+#endregion
 
-    #region Statements
+#region Statements
 
     public abstract record class Stmt(SourceSpan SourceSpan) : LayeAst(SourceSpan);
 
@@ -241,5 +250,5 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class YieldBreak(LayeToken.Keyword YieldKeyword, LayeToken.Keyword BreakKeyword, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(YieldKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
 
-    #endregion
+#endregion
 }

@@ -2,7 +2,7 @@
   "profiles": {
     "layec": {
       "commandName": "Project",
-      "commandLineArgs": ".\\src",
+      "commandLineArgs": "--backend-output --temp-files -o layec1.exe .\\src",
       "workingDirectory": "$(SolutionDir)\\..\\layec"
     }
   }

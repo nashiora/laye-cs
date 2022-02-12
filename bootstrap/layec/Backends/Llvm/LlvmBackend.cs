@@ -199,6 +199,7 @@ internal sealed class LlvmBackend : IBackend
             case SymbolType.SizedInteger _ix: return IntTypeInContext(Context, _ix.BitCount);
 
             case SymbolType.Float: return DoubleTypeInContext(Context);
+#if false
             case SymbolType.SizedFloat _fx:
             {
                 if (_fx.BitCount == 16)
@@ -218,6 +219,7 @@ internal sealed class LlvmBackend : IBackend
                     return default;
                 }
             }
+#endif
 
             case SymbolType.String: return StructTypeInContext(Context, new LLVMTypeRef[] { GetLlvmType(UIntType), PointerType(Int8TypeInContext(Context), 0) }, false);
 
@@ -419,6 +421,12 @@ internal sealed class LlvmBackend : IBackend
                         return builder.GetBufferIndexAddress(target, indices[0]);
                     }
 
+                    case SymbolType.Slice sliceType:
+                    {
+                        Debug.Assert(indices.Length == 1);
+                        return builder.GetSliceIndexAddress(target, indices[0]);
+                    }
+
                     default:
                     {
                         Console.WriteLine($"internal compiler error: unhandled dynamic index target type in LLVM backend ({target.Type})");
@@ -517,6 +525,34 @@ internal sealed class LlvmBackend : IBackend
             {
                 var targetValue = CompileExpression(builder, sliceToString.SliceExpression);
                 return builder.BuildSliceToString(targetValue);
+            }
+
+            case LayeCst.Add add:
+            {
+                var left = CompileExpression(builder, add.LeftExpression);
+                var right = CompileExpression(builder, add.RightExpression);
+                return builder.BuildAdd(left, right);
+            }
+
+            case LayeCst.Subtract subtract:
+            {
+                var left = CompileExpression(builder, subtract.LeftExpression);
+                var right = CompileExpression(builder, subtract.RightExpression);
+                return builder.BuildSubtract(left, right);
+            }
+
+            case LayeCst.Multiply multiply:
+            {
+                var left = CompileExpression(builder, multiply.LeftExpression);
+                var right = CompileExpression(builder, multiply.RightExpression);
+                return builder.BuildMultiply(left, right);
+            }
+
+            case LayeCst.Divide divide:
+            {
+                var left = CompileExpression(builder, divide.LeftExpression);
+                var right = CompileExpression(builder, divide.RightExpression);
+                return builder.BuildDivide(left, right);
             }
 
             case LayeCst.TypeCast typeCast:
@@ -640,7 +676,7 @@ internal sealed class LlvmFunctionBuilder
     public LlvmValue<TFloatType> ConstFloat<TFloatType>(TFloatType floatType, double constantValue)
         where TFloatType : SymbolType
     {
-        if (floatType is not SymbolType.Float && floatType is not SymbolType.SizedFloat)
+        if (floatType is not SymbolType.Float /* && floatType is not SymbolType.SizedFloat */)
             throw new ArgumentException("type is not float", nameof(floatType));
 
         var constFloatValue = ConstReal(Backend.GetLlvmType(floatType), constantValue);
@@ -730,6 +766,20 @@ internal sealed class LlvmFunctionBuilder
         return new(address, new SymbolType.Pointer(bufferElementType));
     }
 
+    public LlvmValue<SymbolType.Pointer> GetSliceIndexAddress(TypedLlvmValue sliceTarget, TypedLlvmValue index)
+    {
+        Debug.Assert(sliceTarget.Type is SymbolType.Pointer targetAddr && targetAddr.ElementType is SymbolType.Slice);
+        Debug.Assert(index.Type == SymbolTypes.UInt);
+
+        var sliceType = (SymbolType.Slice)((SymbolType.Pointer)sliceTarget.Type).ElementType;
+        var sliceElementType = sliceType.ElementType;
+
+        //var sliceValue = LLVM.BuildLoad(Builder, sliceTarget.Value, "slice_value");
+        var sliceDataValue = LLVM.BuildLoad(Builder, BuildStructGEP(Builder, sliceTarget.Value, 1, "slice_data_value_addr"), "slice_data_value");
+        var address = BuildInBoundsGEP(Builder, sliceDataValue, new[] { index.Value }, "slice_data_index_addr");
+        return new(address, new SymbolType.Pointer(sliceElementType));
+    }
+
     public LlvmValue<SymbolType.Integer> BuildLoadStringLengthFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)
     {
         var lengthAddress = BuildStructGEP(Builder, stringAddress.Value, 0, "string.length.addr");
@@ -759,7 +809,7 @@ internal sealed class LlvmFunctionBuilder
         if (offset is not null)
         {
             var bufferAsInt = BuildIntToPtr(Builder, bufferValue.Value, Backend.GetLlvmType(Backend.UIntType), "");
-            var bufferPlusOffset = BuildAdd(Builder, bufferAsInt, offset.Value, "");
+            var bufferPlusOffset = LLVM.BuildAdd(Builder, bufferAsInt, offset.Value, "");
             var bufferAsPtr = BuildPtrToInt(Builder, bufferPlusOffset, Backend.GetLlvmType(bufferValue.Type), "");
             LLVM.BuildStore(Builder, bufferAsPtr, slicePointerAddress);
         }
@@ -807,6 +857,46 @@ internal sealed class LlvmFunctionBuilder
     {
         var memcpyFunction = GetNamedFunction(Backend.Module, "memcpy");
         return LLVM.BuildCall(Builder, memcpyFunction, new[] { dest, src, count }, "memcpy.result");
+    }
+
+    public TypedLlvmValue BuildAdd(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(LLVM.BuildAdd(Builder, left.Value, right.Value, ""), left.Type);
+
+        throw new NotImplementedException();
+    }
+
+    public TypedLlvmValue BuildSubtract(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildSub(Builder, left.Value, right.Value, ""), left.Type);
+
+        throw new NotImplementedException();
+    }
+
+    public TypedLlvmValue BuildMultiply(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+            return new(BuildMul(Builder, left.Value, right.Value, ""), left.Type);
+
+        throw new NotImplementedException();
+    }
+
+    public TypedLlvmValue BuildDivide(TypedLlvmValue left, TypedLlvmValue right)
+    {
+        Debug.Assert(left.Type == right.Type);
+        if (left.Type.IsInteger())
+        {
+            if (left.Type.IsSigned())
+                return new(BuildSDiv(Builder, left.Value, right.Value, ""), left.Type);
+            else return new(BuildUDiv(Builder, left.Value, right.Value, ""), left.Type);
+        }
+
+        throw new NotImplementedException();
     }
 
     public void BuildBranch(LLVMBasicBlockRef block)

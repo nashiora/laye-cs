@@ -98,6 +98,8 @@ internal sealed class LayeParser
     private bool CheckOperator(out LayeToken.Operator @operator, Predicate<LayeToken.Operator> predicate) => Check(out @operator) && predicate(@operator);
     private bool CheckKeyword(Keyword kind) => Check(out LayeToken.Keyword keyword) && keyword.Kind == kind;
     private bool CheckKeyword(Keyword kind, out LayeToken.Keyword keyword) => Check(out keyword) && keyword.Kind == kind;
+    private bool CheckKeyword(out LayeToken.Keyword keyword, Predicate<Keyword> predicate) => Check(out keyword) && predicate(keyword.Kind);
+    private bool CheckKeyword(Keyword[] kinds, out LayeToken.Keyword keyword) => CheckKeyword(out keyword, k => kinds.Contains(k));
 
     private bool Expect<TToken>()
         where TToken : LayeToken
@@ -279,18 +281,36 @@ internal sealed class LayeParser
         LayeAst.Type? type = null;
         if (CheckKeyword(Keyword.SizedInt, out var sizedIntKw))
         {
+            if (sizedIntKw.SizeData != 8 && sizedIntKw.SizeData != 32 && sizedIntKw.SizeData != 64)
+            {
+                if (isRequired)
+                    m_diagnostics.Add(new Diagnostic.Error(sizedIntKw.SourceSpan, "most sized signed integer types are currently not supported"));
+                return null;
+            }
+            
             type = new LayeAst.BuiltInType(sizedIntKw);
             Advance();
         }
         else if (CheckKeyword(Keyword.SizedUInt, out var sizedUIntKw))
         {
+            if (sizedUIntKw.SizeData != 8 && sizedUIntKw.SizeData != 32 && sizedUIntKw.SizeData != 64)
+            {
+                if (isRequired)
+                    m_diagnostics.Add(new Diagnostic.Error(sizedIntKw.SourceSpan, "most sized unsigned integer types are currently not supported"));
+                return null;
+            }
+
             type = new LayeAst.BuiltInType(sizedUIntKw);
             Advance();
         }
         else if (CheckKeyword(Keyword.SizedFloat, out var sizedFloatKw))
         {
-            type = new LayeAst.BuiltInType(sizedFloatKw);
-            Advance();
+            if (isRequired)
+                m_diagnostics.Add(new Diagnostic.Error(sizedIntKw.SourceSpan, "sized float types are currently not supported"));
+            return null;
+
+            //type = new LayeAst.BuiltInType(sizedFloatKw);
+            //Advance();
         }
         else if (CheckKeyword(Keyword.Int, out var intKw))
         {
@@ -327,11 +347,13 @@ internal sealed class LayeParser
             type = new LayeAst.BuiltInType(rawptrKw);
             Advance();
         }
+        /*
         else if (CheckKeyword(Keyword.NoReturn, out var noreturnKw))
         {
             type = new LayeAst.BuiltInType(noreturnKw);
             Advance();
         }
+        */
         else if (CheckIdentifier(out var nameLookupId))
         {
             LayeAst.PathPart pathPart = new LayeAst.NamePathPart(nameLookupId);
@@ -897,33 +919,63 @@ internal sealed class LayeParser
         }
     }
 
+    private static readonly Keyword[] logicalInfixOperatorKeywords = new[] { Keyword.And, Keyword.Or };
+
     private LayeAst.Expr? ReadExpression() => ReadExpression(out _);
     private LayeAst.Expr? ReadExpression(out bool isPrimary)
     {
-        isPrimary = true;
-        
-        var expression = ReadPrimaryExpression();
+        var expression = ReadSecondary(out isPrimary);
         if (expression is null)
         {
-            AssertHasErrors("reading primary expression");
+            AssertHasErrors("reading secondary expression");
             return null;
         }
 
-        while (CheckOperator(out var infix, op => op.Kind != Operator.Assign))
+        while (CheckKeyword(logicalInfixOperatorKeywords, out var logical))
         {
+            Advance(); // logical infix
             isPrimary = false;
 
-            var rhs = ReadPrimaryExpression();
+            var rhs = ReadSecondary(out _);
             if (rhs is null)
             {
-                AssertHasErrors("reading primary expression as rhs");
+                AssertHasErrors("reading secondary expression as rhs");
                 return null;
             }
 
-            expression = new LayeAst.InfixOperation(expression, infix, rhs);
+            expression = new LayeAst.LogicalInfixOperation(expression, logical, rhs);
         }
 
         return expression;
+
+        LayeAst.Expr? ReadSecondary(out bool isPrimary)
+        {
+            isPrimary = true;
+
+            var expression = ReadPrimaryExpression();
+            if (expression is null)
+            {
+                AssertHasErrors("reading primary expression");
+                return null;
+            }
+
+            while (CheckOperator(out var infix, op => op.Kind != Operator.Assign))
+            {
+                Advance(); // infix
+                isPrimary = false;
+
+                var rhs = ReadPrimaryExpression();
+                if (rhs is null)
+                {
+                    AssertHasErrors("reading primary expression as rhs");
+                    return null;
+                }
+
+                expression = new LayeAst.InfixOperation(expression, infix, rhs);
+            }
+
+            return expression;
+        }
     }
 
     private LayeAst.Expr? ReadPrimaryExpression()
@@ -994,7 +1046,21 @@ internal sealed class LayeParser
                 else if (subexpr is LayeAst.Float subfloat)
                     return new LayeAst.Float(new LayeToken.Float(SourceSpan.Combine(prefixOp.SourceSpan, subfloat.SourceSpan), subfloat.Literal.LiteralValue));
             }
-            else throw new NotImplementedException();
+
+            return new LayeAst.PrefixOperation(prefixOp, subexpr);
+        }
+        else if (CheckKeyword(Keyword.Not, out var notOp))
+        {
+            Advance(); // `not`
+
+            var subexpr = ReadPrimaryExpression();
+            if (subexpr is null)
+            {
+                AssertHasErrors("parsing primary expression after `not` prefix operator");
+                return null;
+            }
+
+            return new LayeAst.LogicalNot(subexpr);
         }
         else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));
 

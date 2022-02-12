@@ -122,6 +122,59 @@ internal abstract record class Symbol<TSymbolType> : Symbol
     }
 }
 
+internal static class SymbolTypes
+{
+    public static readonly SymbolType.Void Void = new();
+    public static readonly SymbolType.Rune Rune = new();
+
+    public static readonly SymbolType.UntypedBool UntypedBool = new();
+    public static readonly SymbolType.Bool Bool = new();
+
+#if false
+    public static readonly SymbolType.SizedBool B8 = new(8);
+    public static readonly SymbolType.SizedBool B32 = new(32);
+#endif
+
+    public static readonly SymbolType.UntypedInteger UntypedInt = new(true);
+    public static readonly SymbolType.UntypedInteger UntypedUInt = new(false);
+
+    public static readonly SymbolType.Integer Int = new(true);
+    public static readonly SymbolType.Integer UInt = new(false);
+
+#if false
+    public static readonly SymbolType.SizedInteger I8 = new(true, 8);
+    public static readonly SymbolType.SizedInteger I16 = new(true, 16);
+    public static readonly SymbolType.SizedInteger I32 = new(true, 32);
+    public static readonly SymbolType.SizedInteger I64 = new(true, 64);
+#endif
+
+    public static readonly SymbolType.SizedInteger U8 = new(false, 8);
+#if false
+    public static readonly SymbolType.SizedInteger U16 = new(false, 16);
+    public static readonly SymbolType.SizedInteger U32 = new(false, 32);
+    public static readonly SymbolType.SizedInteger U64 = new(false, 64);
+#endif
+
+    public static readonly SymbolType.UntypedFloat UntypedFloat = new();
+    public static readonly SymbolType.Float Float = new();
+
+#if false
+    public static readonly SymbolType.SizedFloat F32 = new(32);
+    public static readonly SymbolType.SizedFloat F64 = new(64);
+#endif
+
+    public static readonly SymbolType.UntypedString UntypedString = new();
+    public static readonly SymbolType.String String = new();
+
+    public static readonly SymbolType.RawPtr RawPtr = new();
+
+    public static readonly SymbolType.Buffer U8Buffer = new(U8, AccessKind.ReadWrite);
+    public static readonly SymbolType.Buffer ReadOnlyU8Buffer = new(U8, AccessKind.ReadOnly);
+
+    public static readonly SymbolType.Slice U8Slice = new(U8, AccessKind.ReadWrite);
+    public static readonly SymbolType.Slice ReadOnlyU8Slice = new(U8, AccessKind.ReadOnly);
+}
+
 internal abstract record class SymbolType(string Name)
 {
     /// <summary>
@@ -136,13 +189,15 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Bool() : SymbolType("bool");
     public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 
-    public sealed record class UntypedInteger(bool Signed) : SymbolType("<untyped int>");
+    public sealed record class UntypedInteger(bool Signed) : SymbolType($"<untyped {(Signed ? "" : "u")}int>");
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
     public sealed record class SizedInteger(bool Signed, uint BitCount) : SymbolType($"{(Signed ? "i" : "u")}{BitCount}");
 
     public sealed record class UntypedFloat() : SymbolType("<untyped float>");
     public sealed record class Float() : SymbolType("float");
+#if false
     public sealed record class SizedFloat(uint BitCount) : SymbolType($"f{BitCount}");
+#endif
 
     public sealed record class UntypedString() : SymbolType("<untyped string>");
     public sealed record class String() : SymbolType("string");
@@ -201,5 +256,67 @@ internal abstract record class SymbolType(string Name)
         builder.Append(')');
 
         return builder.ToString();
+    }
+}
+
+internal static class SymbolTypeExtensions
+{
+    public static bool IsSigned(this SymbolType type)
+    {
+        switch (type)
+        {
+            case SymbolType.UntypedInteger u: return u.Signed;
+            case SymbolType.Integer i: return i.Signed;
+            case SymbolType.SizedInteger s: return s.Signed;
+
+            case SymbolType.UntypedFloat:
+            case SymbolType.Float:
+                //case SymbolType.SizedFloat:
+                return true;
+
+            default: return false;
+        }
+    }
+
+    public static bool IsNumeric(this SymbolType type)
+    {
+        switch (type)
+        {
+            case SymbolType.UntypedInteger:
+            case SymbolType.Integer:
+            case SymbolType.SizedInteger:
+            case SymbolType.UntypedFloat:
+            case SymbolType.Float:
+            //case SymbolType.SizedFloat:
+                return true;
+
+            default: return false;
+        }
+    }
+
+    public static bool IsInteger(this SymbolType type)
+    {
+        switch (type)
+        {
+            case SymbolType.UntypedInteger:
+            case SymbolType.Integer:
+            case SymbolType.SizedInteger:
+                return true;
+
+            default: return false;
+        }
+    }
+
+    public static bool IsFloat(this SymbolType type)
+    {
+        switch (type)
+        {
+            case SymbolType.UntypedFloat:
+            case SymbolType.Float:
+                //case SymbolType.SizedFloat:
+                return true;
+
+            default: return false;
+        }
     }
 }

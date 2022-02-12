@@ -249,7 +249,9 @@ internal sealed class LayeChecker
                     case Keyword.SizedUInt: return new SymbolType.SizedInteger(false, kw.SizeData);
 
                     case Keyword.Float: return new SymbolType.Float();
+#if false
                     case Keyword.SizedFloat: return new SymbolType.SizedFloat(kw.SizeData);
+#endif
 
                     case Keyword.RawPtr: return new SymbolType.RawPtr();
                     case Keyword.String: return new SymbolType.String();
@@ -587,7 +589,7 @@ internal sealed class LayeChecker
         {
             //case LayeAst.NameLookup nameLookupExpr: { }
 
-            case LayeAst.Integer intLit: return new LayeCst.Integer(intLit.Literal, new SymbolType.UntypedInteger(intLit.Signed));
+            case LayeAst.Integer intLit: return new LayeCst.Integer(intLit.Literal, intLit.Signed ? SymbolTypes.UntypedInt : SymbolTypes.UntypedUInt);
             case LayeAst.Float floatLit: return new LayeCst.Float(floatLit.Literal, new SymbolType.UntypedFloat());
             case LayeAst.Bool boolLit: return new LayeCst.Bool(boolLit.Literal, new SymbolType.UntypedBool());
             case LayeAst.String stringLit: return new LayeCst.String(stringLit.Literal, new SymbolType.UntypedString());
@@ -666,7 +668,7 @@ internal sealed class LayeChecker
                             return null;
                         }
 
-                        var index = CheckImplicitTypeCast(indices[0], new SymbolType.Integer(false));
+                        var index = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
                         if (index is null)
                         {
                             AssertHasErrors("checking buffer index implicit cast to uint");
@@ -674,6 +676,24 @@ internal sealed class LayeChecker
                         }
 
                         return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, bufferType.ElementType);
+                    }
+
+                    case SymbolType.Slice sliceType:
+                    {
+                        if (indices.Length != 1)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"exactly one index argument required for type {target.Type}"));
+                            return null;
+                        }
+
+                        var index = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
+                        if (index is null)
+                        {
+                            AssertHasErrors("checking slice index implicit cast to uint");
+                            return null;
+                        }
+
+                        return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, sliceType.ElementType);
                     }
 
                     default:
@@ -754,6 +774,106 @@ internal sealed class LayeChecker
                 }
 
                 return new LayeCst.Slice(sliceExpr.SourceSpan, targetExpr, offsetExpr, countExpr, elementType);
+            }
+
+            case LayeAst.GroupedExpression grouped: return CheckExpression(grouped.Expression);
+
+            case LayeAst.PrefixOperation prefixExpr:
+            {
+                var expr = CheckExpression(prefixExpr.Expression);
+                if (expr is null)
+                {
+                    AssertHasErrors("checking prefix expression");
+                    return null;
+                }
+
+                switch (prefixExpr.Operator)
+                {
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(prefixExpr.Operator.SourceSpan, "unsupported prefix operator"));
+                        return null;
+                    }
+                }
+            }
+
+            case LayeAst.InfixOperation infixExpr:
+            {
+                var leftExpr = CheckExpression(infixExpr.LeftExpression);
+                if (leftExpr is null)
+                {
+                    AssertHasErrors("checking left infix expression");
+                    return null;
+                }
+
+                var rightExpr = CheckExpression(infixExpr.RightExpression);
+                if (rightExpr is null)
+                {
+                    AssertHasErrors("checking right infix expression");
+                    return null;
+                }
+
+                switch (infixExpr.Operator.Kind)
+                {
+                    case Operator.Add:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.Add(leftExpr, rightExpr);
+                    }
+
+                    case Operator.Subtract:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.Subtract(leftExpr, rightExpr);
+                    }
+
+                    case Operator.Multiply:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.Multiply(leftExpr, rightExpr);
+                    }
+
+                    case Operator.Divide:
+                    {
+                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
+                            break;
+
+                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        {
+                            AssertHasErrors("upcasting infix expressions");
+                            return null;
+                        }
+
+                        return new LayeCst.Divide(leftExpr, rightExpr);
+                    }
+                }
+
+                m_diagnostics.Add(new Diagnostic.Error(infixExpr.Operator.SourceSpan, $"unsupported infix operator on types {leftExpr.Type} and {rightExpr.Type}"));
+                return null;
             }
 
             case LayeAst.Invoke invokeExpr: return CheckInvoke(invokeExpr);
@@ -859,8 +979,10 @@ internal sealed class LayeChecker
                     }
                     else if (arg.Type is SymbolType.SizedInteger sint && sint.BitCount < 32)
                         argValues[i] = new LayeCst.TypeCast(arg.SourceSpan, arg, new SymbolType.SizedInteger(sint.Signed, 32));
+#if false
                     else if (arg.Type is SymbolType.SizedFloat sfloat && sfloat.BitCount < 64)
                         argValues[i] = new LayeCst.TypeCast(arg.SourceSpan, arg, new SymbolType.SizedFloat(64));
+#endif
                 }
             }
 
@@ -955,5 +1077,232 @@ internal sealed class LayeChecker
 
         m_diagnostics.Add(new Diagnostic.Error(value.SourceSpan, $"unable to convert from {value.Type} to {targetType}"));
         return null;
+    }
+
+    private bool CheckImplicitNumericUpcast(ref LayeCst.Expr left, ref LayeCst.Expr right)
+    {
+        bool shouldUpcastToFloats = left.Type is SymbolType.UntypedFloat || left.Type is SymbolType.Float /* || left.Type is SymbolType.SizedFloat */
+            || right.Type is SymbolType.UntypedFloat || right.Type is SymbolType.Float /* || right.Type is SymbolType.SizedFloat */;
+
+        if (shouldUpcastToFloats)
+            return CheckImplicitFloatUpcast_Impl(ref left, ref right);
+
+        // Both untyped
+        if (left.Type is SymbolType.UntypedInteger _lUntyped0 && right.Type is SymbolType.UntypedInteger _rUntyped0)
+        {
+            var leftLit = (LayeCst.Integer)left;
+            left = new LayeCst.Integer(leftLit.Literal, _lUntyped0.Signed ? SymbolTypes.Int : SymbolTypes.UInt);
+
+            var rightLit = (LayeCst.Integer)right;
+            right = new LayeCst.Integer(rightLit.Literal, _rUntyped0.Signed ? SymbolTypes.Int : SymbolTypes.UInt);
+
+            return true;
+        }
+
+        // One of them is untyped, but not both
+        if (left.Type is SymbolType.UntypedInteger)
+            return CheckImplicitIntegerUpcast_Impl(ref left, right);
+        else if (right.Type is SymbolType.UntypedInteger)
+            return CheckImplicitIntegerUpcast_Impl(ref right, left);
+
+        if (left.Type == right.Type) return true;
+
+        if (left.Type is SymbolType.Integer && right.Type is SymbolType.Integer)
+        {
+            m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(left, right), "unable to convert expressions to the same numeric type"));
+            return false;
+        }
+
+        bool swap = false;
+
+        // if left is uint, it's the dominant by default
+        if (left.Type is SymbolType.Integer)
+            swap = true;
+        else
+        {
+            // if right is NOT sized, it's the dominant and we shouldn't swap, so don't check
+            var _lSized1 = (SymbolType.SizedInteger)left.Type;
+
+            if (right.Type is SymbolType.SizedInteger _rSized1)
+            {
+                if (_lSized1.BitCount > _rSized1.BitCount)
+                    swap = true;
+                else if (_lSized1.BitCount == _rSized1.BitCount)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(left, right), "unable to convert expressions to the same numeric type"));
+                    return false;
+                }
+            }
+        }
+
+        if (swap)
+            return CheckImplicitIntegerUpcast_Impl(ref right, left);
+        else return CheckImplicitIntegerUpcast_Impl(ref left, right);
+    }
+
+    private bool CheckImplicitFloatUpcast_Impl(ref LayeCst.Expr left, ref LayeCst.Expr right)
+    {
+        bool leftIsInteger = left.Type is SymbolType.UntypedInteger || left.Type is SymbolType.Integer || left.Type is SymbolType.SizedInteger;
+        bool rightIsInteger = right.Type is SymbolType.UntypedInteger || right.Type is SymbolType.Integer || right.Type is SymbolType.SizedInteger;
+
+        if (left.Type is SymbolType.UntypedFloat)
+        {
+            var leftLit = (LayeCst.Float)left;
+            left = new LayeCst.Float(leftLit.Literal, SymbolTypes.Float);
+        }
+        else if (left.Type is SymbolType.UntypedInteger)
+        {
+            var leftLit = (LayeCst.Integer)left;
+            left = new LayeCst.Float(new(leftLit.SourceSpan, leftLit.Literal.LiteralValue), SymbolTypes.Float);
+        }
+        else if (left.Type is not SymbolType.Float)
+        {
+            if (!leftIsInteger)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(left.SourceSpan, "expression cannot be made numeric"));
+                return false;
+            }
+
+            left = new LayeCst.TypeCast(left.SourceSpan, left, SymbolTypes.Float);
+        }
+
+        if (right.Type is SymbolType.UntypedFloat)
+        {
+            var rightLit = (LayeCst.Float)right;
+            right = new LayeCst.Float(rightLit.Literal, SymbolTypes.Float);
+        }
+        else if (right.Type is SymbolType.UntypedInteger)
+        {
+            var rightLit = (LayeCst.Integer)right;
+            right = new LayeCst.Float(new(rightLit.SourceSpan, rightLit.Literal.LiteralValue), SymbolTypes.Float);
+        }
+        else if (right.Type is not SymbolType.Float)
+        {
+            if (!rightIsInteger)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, "expression cannot be made numeric"));
+                return false;
+            }
+
+            right = new LayeCst.TypeCast(right.SourceSpan, right, SymbolTypes.Float);
+        }
+
+        return true;
+    }
+
+    private bool CheckImplicitIntegerUpcast_Impl(ref LayeCst.Expr left, LayeCst.Expr right)
+    {
+        // at this point, right will NEVER be untyped
+
+        if (left.Type is SymbolType.UntypedInteger _lUntyped1)
+        {
+            var leftLit = (LayeCst.Integer)left;
+            if (right.Type is SymbolType.Integer _rInteger1)
+            {
+                if (_lUntyped1.Signed && (long)leftLit.Literal.LiteralValue < 0)
+                {
+                    if (!_rInteger1.Signed)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, "left integer literal is negative: cannot convert to unsigned integer type"));
+                        return false;
+                    }
+
+                    ulong literalPositive = (ulong)-(long)leftLit.Literal.LiteralValue;
+                    if (literalPositive > (ulong)-(long.MinValue + 1) + 1)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, $"left integer literal is out of range of the signed platform integer (64 bits, min value {long.MinValue})"));
+                        return false;
+                    }
+                }
+                else
+                {
+                    // else treat it as unsigned
+
+                    if (_rInteger1.Signed && leftLit.Literal.LiteralValue > long.MaxValue)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, $"left integer literal is out of range of the signed platform integer (64 bits, max value {long.MaxValue})"));
+                        return false;
+                    }
+                }
+
+                // here, the literal can be stored in the right type
+                left = new LayeCst.Integer(leftLit.Literal, right.Type);
+                return true;
+            }
+
+            // here, right is a sized integer
+            var _rSized1 = (SymbolType.SizedInteger)right.Type;
+
+            if (_lUntyped1.Signed && (long)leftLit.Literal.LiteralValue < 0)
+            {
+                if (!_rSized1.Signed)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, "left integer literal is negative: cannot convert to unsigned integer type"));
+                    return false;
+                }
+
+                ulong literalPositive = (ulong)-(long)leftLit.Literal.LiteralValue;
+                if (literalPositive > AbsSignedMinForBits(_rSized1.BitCount))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, $"left integer literal is out of range of the signed platform integer (64 bits, min value -{AbsSignedMinForBits(_rSized1.BitCount)})"));
+                    return false;
+                }
+            }
+            else
+            {
+                // else treat it as unsigned
+
+                if (_rSized1.Signed && leftLit.Literal.LiteralValue > SignedMaxForBits(_rSized1.BitCount))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(right.SourceSpan, $"left integer literal is out of range of the signed platform integer (64 bits, max value {SignedMaxForBits(_rSized1.BitCount)})"));
+                    return false;
+                }
+            }
+
+            // here, the literal can be stored in the right type
+            left = new LayeCst.Integer(leftLit.Literal, right.Type);
+            return true;
+        }
+
+        // Otherwise, both are typed
+
+        // We should never get called if both types are unsized
+        // left should be sized and right COULD be unsized
+
+        // we should also not get here if the bit width is the same but the sign is different
+
+        // given the above, I think every other case is handled and we can just cast
+
+        left = new LayeCst.TypeCast(left.SourceSpan, left, right.Type);
+        return true;
+
+        //m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(left, right), "unable to convert expressions to the same numeric type"));
+        //return false;
+    }
+
+    private static ulong AbsSignedMinForBits(uint bitCount)
+    {
+        if (bitCount > 64)
+            throw new NotImplementedException();
+
+        if (bitCount == 64) return (ulong)-(long.MinValue + 1) + 1;
+        if (bitCount == 32) return (ulong)-(long)int.MinValue;
+        if (bitCount == 16) return (ulong)-(long)short.MinValue;
+        if (bitCount == 8) return (ulong)-(long)sbyte.MinValue;
+
+        throw new NotImplementedException();
+    }
+
+    private static ulong SignedMaxForBits(uint bitCount)
+    {
+        if (bitCount > 64)
+            throw new NotImplementedException();
+
+        if (bitCount == 64) return long.MaxValue;
+        if (bitCount == 32) return (ulong)int.MaxValue;
+        if (bitCount == 16) return (ulong)short.MaxValue;
+        if (bitCount == 8) return (ulong)sbyte.MaxValue;
+
+        throw new NotImplementedException();
     }
 }

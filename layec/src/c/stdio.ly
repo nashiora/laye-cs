@@ -3,6 +3,7 @@
 // 
 // list of functions from here: https://www.tutorialspoint.com/c_standard_library/stdio_h.htm
 // because why not
+//
 extern "C" i32 cdecl fclose(rawptr stream);
 extern "C" void cdecl clearerr(rawptr stream);
 extern "C" i32 cdecl feof(rawptr stream);
