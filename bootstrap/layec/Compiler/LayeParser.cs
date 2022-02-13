@@ -1144,6 +1144,43 @@ internal sealed class LayeParser
 
             return new LayeAst.LogicalNot(subexpr);
         }
+        else if (CheckKeyword(Keyword.SizeOf, out var sizeofKw))
+        {
+            Advance(); // `sizeof`
+
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open `sizeof` argument"));
+                return null;
+            }
+
+            LayeAst.Expr? expr = ReadExpression();
+            LayeAst.Type? type = null;
+
+            if (expr is null)
+            {
+                type = TryReadTypeNode(false);
+                if (type is null)
+                {
+                    AssertHasErrors("reading sizeof contents");
+                    return null;
+                }
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close `sizeof` argument"));
+                return null;
+            }
+
+            if (expr is not null)
+                return new LayeAst.SizeOfExprOrType(expr);
+            else
+            {
+                Debug.Assert(type is not null);
+                return new LayeAst.SizeOfType(type);
+            }
+        }
         else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));
 
         if (result is null)

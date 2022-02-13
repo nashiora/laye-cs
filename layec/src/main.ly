@@ -54,6 +54,11 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
     t.value = 10;
     printf("t.value = %d%c", t.value, 10);
 
+    uint test_size = sizeof(test);
+    uint test_size2 = sizeof(t);
+
+    printf("sizeof(test) == %llu, sizeof(t) == %llu%c", test_size, test_size2, 10);
+
     if (1 == 1.0) printf("Hello, hunter!%c", 10);
     else printf("Hello, world!%c", 10);
 

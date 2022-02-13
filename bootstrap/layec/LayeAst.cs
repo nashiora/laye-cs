@@ -188,6 +188,9 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class GroupedExpression(LayeToken.Delimiter OpenGroup, Expr Expression, LayeToken.Delimiter CloseGroup)
         : Expr(new SourceSpan(OpenGroup.SourceSpan.StartLocation, CloseGroup.SourceSpan.EndLocation));
 
+    public sealed record class SizeOfType(Type _Type) : Expr(_Type.SourceSpan);
+    public sealed record class SizeOfExprOrType(Expr ExprOrType) : Expr(ExprOrType.SourceSpan);
+
     public sealed record class PrefixOperation(LayeToken.Operator Operator, Expr Expression)
         : Expr(SourceSpan.Combine(Operator, Expression));
     public sealed record class LogicalNot(Expr Expression)

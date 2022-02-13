@@ -699,6 +699,12 @@ internal sealed class LayeChecker
                     return null;
                 }
 
+                if (symbol is not Symbol.Binding)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(nameLookupExpr.Name.SourceSpan, $"the name `{nameLookupExpr.Name.Image}` does not refer to a variable"));
+                    return null;
+                }
+
                 return new LayeCst.LoadValue(nameLookupExpr.SourceSpan, symbol);
             }
 
@@ -901,6 +907,50 @@ internal sealed class LayeChecker
             }
 
             case LayeAst.GroupedExpression grouped: return CheckExpression(grouped.Expression);
+
+            case LayeAst.SizeOfExprOrType _sizeof:
+            {
+                var exprOrType = _sizeof.ExprOrType;
+
+                switch (exprOrType)
+                {
+                    case LayeAst.NameLookup nameLookup:
+                    {
+                        var symbol = CurrentScope.LookupSymbol(nameLookup.Name.Image);
+                        if (symbol is null)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(nameLookup.Name.SourceSpan, $"the name `{nameLookup.Name.Image}` does not exist in the current context"));
+                            return null;
+                        }
+
+                        return new LayeCst.SizeOf(_sizeof.SourceSpan, symbol.Type!);
+                    }
+
+                    default:
+                    {
+                        var expr = CheckExpression(exprOrType);
+                        if (expr is null)
+                        {
+                            AssertHasErrors("checking sizeof expression");
+                            return null;
+                        }
+
+                        return new LayeCst.SizeOf(_sizeof.SourceSpan, expr.Type);
+                    }
+                }
+            }
+
+            case LayeAst.SizeOfType _sizeof:
+            {
+                var type = ResolveType(_sizeof._Type);
+                if (type is null)
+                {
+                    AssertHasErrors("resolving sizeof type");
+                    return null;
+                }
+
+                return new LayeCst.SizeOf(_sizeof.SourceSpan, type);
+            }
 
             case LayeAst.PrefixOperation prefixExpr:
             {

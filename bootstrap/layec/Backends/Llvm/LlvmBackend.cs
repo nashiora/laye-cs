@@ -806,6 +806,13 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoad(resultStorage);
             }
 
+            case LayeCst.SizeOf _sizeof:
+            {
+                var type = GetLlvmType(_sizeof.Type);
+                var so = LLVM.SizeOf(type);
+                return new(so, SymbolTypes.UInt);
+            }
+
             case LayeCst.TypeCast typeCast:
             {
                 var targetValue = CompileExpression(builder, typeCast.Expression);

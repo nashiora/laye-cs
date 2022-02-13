@@ -149,6 +149,8 @@ internal enum Keyword
     Not,
 
     Cast,
+    SizeOf,
+    OffsetOf,
 
     #endregion
 
