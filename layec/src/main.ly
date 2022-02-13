@@ -7,8 +7,8 @@
 [T] Operator expressions
     [T] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
     [T] Prefix ops (&, *, -, not)
-[ ] Structure operations
-    [ ] Size of structure `sizeof(Type)`
+[!] Structure operations
+    [X] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
 [ ] Branch structures
     [X] If/else `if (expr) { } else if (expr) { } else { }
@@ -39,7 +39,7 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
     storage[1] = argv0;
     string[] args = storage[:2];
     /*/
-    string[*] argvStorage = memory_allocate((8 + 8) * argc);
+    string[*] argvStorage = memory_allocate(sizeof(string) * argc);
     uint argvCounter = 0;
     while (argvCounter < argc)
     {
@@ -59,7 +59,7 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
 
     printf("sizeof(test) == %llu, sizeof(t) == %llu%c", test_size, test_size2, 10);
 
-    if (1 == 1.0) printf("Hello, hunter!%c", 10);
+    if (not (1 == 2.0)) printf("Hello, hunter!%c", 10);
     else printf("Hello, world!%c", 10);
 
     printf("process invoked with the following arguments:%c", 10);

@@ -1154,13 +1154,13 @@ internal sealed class LayeParser
                 return null;
             }
 
-            LayeAst.Expr? expr = ReadExpression();
-            LayeAst.Type? type = null;
+            LayeAst.Expr? expr = null;
+            LayeAst.Type? type = TryReadTypeNode(false);
 
-            if (expr is null)
+            if (type is null || !CheckDelimiter(Delimiter.CloseParen))
             {
-                type = TryReadTypeNode(false);
-                if (type is null)
+                expr = ReadExpression();
+                if (expr is null)
                 {
                     AssertHasErrors("reading sizeof contents");
                     return null;
@@ -1173,12 +1173,12 @@ internal sealed class LayeParser
                 return null;
             }
 
-            if (expr is not null)
-                return new LayeAst.SizeOfExprOrType(expr);
+            if (type is not null)
+                return new LayeAst.SizeOfType(type);
             else
             {
-                Debug.Assert(type is not null);
-                return new LayeAst.SizeOfType(type);
+                Debug.Assert(expr is not null);
+                return new LayeAst.SizeOfExpression(expr);
             }
         }
         else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));

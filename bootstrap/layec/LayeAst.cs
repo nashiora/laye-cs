@@ -189,7 +189,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
         : Expr(new SourceSpan(OpenGroup.SourceSpan.StartLocation, CloseGroup.SourceSpan.EndLocation));
 
     public sealed record class SizeOfType(Type _Type) : Expr(_Type.SourceSpan);
-    public sealed record class SizeOfExprOrType(Expr ExprOrType) : Expr(ExprOrType.SourceSpan);
+    public sealed record class SizeOfExpression(Expr Expression) : Expr(Expression.SourceSpan);
 
     public sealed record class PrefixOperation(LayeToken.Operator Operator, Expr Expression)
         : Expr(SourceSpan.Combine(Operator, Expression));
