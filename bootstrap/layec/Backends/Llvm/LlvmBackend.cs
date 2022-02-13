@@ -440,6 +440,7 @@ internal sealed class LlvmBackend : IBackend
                     var expressionValue = CompileExpression(builder, expression);
                     builder.BuildStore(expressionValue, bindingAddress);
                 }
+                else builder.BuildZeroInitialize(bindingAddress);
             } break;
 
             case LayeCst.Return returnStmt:
@@ -1078,6 +1079,18 @@ internal sealed class LlvmFunctionBuilder
         CheckCanBuild();
         Debug.Assert(value.Type == address.Type.ElementType, $"type checker did not ensure value and address types were the same ({value.Type} != {address.Type.ElementType})");
         LLVM.BuildStore(Builder, value.Value, address.Value);
+    }
+
+    public void BuildZeroInitialize(LlvmValue<SymbolType.Pointer> address)
+    {
+        var elementType = address.Type.ElementType;
+        var memsetFunction = GetNamedFunction(Backend.Module, "memset");
+        LLVM.BuildCall(Builder, memsetFunction,
+            new[] {
+                BuildPointerCast(Builder, address.Value, PointerType(Int8TypeInContext(Backend.Context), 0), ""),
+                ConstInt(Int32TypeInContext(Backend.Context), 0, true),
+                SizeOf(Backend.GetLlvmType(elementType))
+            }, "");
     }
 
     public LlvmValue<SymbolType.Pointer> BuildGetStructFieldAddress(TypedLlvmValue structTarget, string fieldName)

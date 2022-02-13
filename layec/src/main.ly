@@ -10,7 +10,8 @@
 [!] Structure operations
     [X] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
-[ ] Zero initializers
+    [ ] Structural initializers
+    [X] Zero initializers
 [ ] Branch structures
     [X] If/else `if (expr) { } else if (expr) { } else { }
     [X] While `while (expr) { } else { }`
@@ -33,13 +34,6 @@ struct test
 void main(i32 argc, u8 readonly[*] readonly[*] argv)
 {
     // program startup logic (if we keep the idea of passing the program args to main like C and friends)
-    /*
-    string[*] storage = memory_allocate((8 + 8) * 2); // sizeof(uint) + sizeof(rawptr) = 8 + 8 = 16 (on my machine)
-    string argv0 = argv[0][:strlen(argv[0])];
-    storage[0] = argv0;
-    storage[1] = argv0;
-    string[] args = storage[:2];
-    /*/
     string[*] argvStorage = memory_allocate(sizeof(string) * argc);
     uint argvCounter = 0;
     while (argvCounter < argc)
@@ -48,7 +42,6 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
         argvCounter = argvCounter + 1;
     }
     string[] args = argvStorage[:argc];
-    //*/
     // end program startup logic
 
     laye_main(args);
@@ -75,7 +68,6 @@ void laye_main(string[] args)
     printf("%c", 10);
 
     string_builder sb;
-    string_builder_init(&sb);
 
     printf("sb.length = %llu%c", string_builder_length_get(sb), 10);
     printf("sb.capacity = %llu%c", string_builder_capacity_get(sb), 10);

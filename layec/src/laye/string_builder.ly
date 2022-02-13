@@ -7,14 +7,6 @@ struct string_builder
 	u8[*] data;
 }
 
-void string_builder_init(string_builder *sb)
-{
-	rawptr data = 0;
-	(*sb).length = 0;
-	(*sb).capacity = 0;
-	(*sb).data = data;
-}
-
 uint string_builder_length_get(string_builder sb) { return sb.length; }
 uint string_builder_capacity_get(string_builder sb) { return sb.capacity; }
 u8 readonly[*] string_builder_data_get(string_builder sb) { return sb.data; }
