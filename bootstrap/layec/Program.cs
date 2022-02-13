@@ -112,6 +112,7 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
         OutputFileName = args.OutputFileName,
         KeepTemporaryFiles = args.KeepTemporaryFiles,
         ShowBackendOutput = args.ShowBackendOutput,
+        TargetTriple = args.TargetTriple,
     };
 
     int returnCode = backend.Compile(cstRoots, backendOptions);
@@ -201,6 +202,8 @@ sealed class ProgramArgs
 
     [CommandLine.Option("backend", Default = Backend.Llvm, HelpText = "The backend used to generate the output file.")]
     public Backend Backend { get; set; } = Backend.Llvm;
+    [CommandLine.Option("target", Default = "", HelpText = "The target triple to compile for")]
+    public string TargetTriple { get; set; } = "";
 
     [CommandLine.Option("help", Default = false, HelpText = "Display this help documentation.")]
     public bool ShowHelp { get; set; } = false;

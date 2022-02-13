@@ -124,7 +124,9 @@ internal sealed class LlvmBackend : IBackend
 
         // i686-pc-windows-gnu
         string additionalFiles = string.Join(" ", filesToLinkAgainst.Select(f => $"\"{f}\""));
-        string clangArguments = $"-target {options.TargetTriple} \"{bcFileName}\" {additionalFiles} -g -v \"-o{outFileName}\"";
+        string clangArguments = $"\"{bcFileName}\" {additionalFiles} -g -v \"-o{outFileName}\"";
+        if (!string.IsNullOrWhiteSpace(options.TargetTriple))
+            clangArguments += $" -target {options.TargetTriple}";
         if (options.IsExecutable)
         { }// clangArguments += " -Wl,-ENTRY:_laye_start";
         else clangArguments += " -shared -fuse-ld=llvm-lib";
