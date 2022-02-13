@@ -235,12 +235,12 @@ internal sealed class LayeChecker
                 var kw = builtInType.BuiltInKeyword;
                 switch (kw.Kind)
                 {
-                    case Keyword.Void: return new SymbolType.Void();
+                    case Keyword.Void: return SymbolTypes.Void;
 
-                    case Keyword.Bool: return new SymbolType.Bool();
-                    case Keyword.SizedBool: return new SymbolType.SizedBool(kw.SizeData);
+                    case Keyword.Bool: return SymbolTypes.Bool;
+                    //case Keyword.SizedBool: return new SymbolType.SizedBool(kw.SizeData);
 
-                    case Keyword.Rune: return new SymbolType.Rune();
+                    case Keyword.Rune: return SymbolTypes.Rune;
 
                     case Keyword.Int: return new SymbolType.Integer(true);
                     case Keyword.SizedInt: return new SymbolType.SizedInteger(true, kw.SizeData);
@@ -253,7 +253,7 @@ internal sealed class LayeChecker
                     case Keyword.SizedFloat: return new SymbolType.SizedFloat(kw.SizeData);
 #endif
 
-                    case Keyword.RawPtr: return new SymbolType.RawPtr();
+                    case Keyword.RawPtr: return SymbolTypes.RawPtr;
                     case Keyword.String: return new SymbolType.String();
 
                     default:
@@ -687,8 +687,9 @@ internal sealed class LayeChecker
 
             case LayeAst.Integer intLit: return new LayeCst.Integer(intLit.Literal, intLit.Signed ? SymbolTypes.UntypedInt : SymbolTypes.UntypedUInt);
             case LayeAst.Float floatLit: return new LayeCst.Float(floatLit.Literal, new SymbolType.UntypedFloat());
-            case LayeAst.Bool boolLit: return new LayeCst.Bool(boolLit.Literal, new SymbolType.UntypedBool());
+            case LayeAst.Bool boolLit: return new LayeCst.Bool(boolLit.Literal, SymbolTypes.Bool);
             case LayeAst.String stringLit: return new LayeCst.String(stringLit.Literal, new SymbolType.UntypedString());
+            case LayeAst.NullPtr nullptrLit: return new LayeCst.NullPtr(nullptrLit.Literal, SymbolTypes.RawPtr, SymbolTypes.U8);
 
             case LayeAst.NameLookup nameLookupExpr:
             {
@@ -1428,8 +1429,20 @@ internal sealed class LayeChecker
         {
             case SymbolType.RawPtr:
             {
-                if (targetType is SymbolType.Buffer)
+                if (targetType is SymbolType.Buffer buffer)
+                {
+                    if (value is LayeCst.NullPtr nullptr)
+                        return new LayeCst.NullPtr(nullptr.Literal, targetType, buffer.ElementType);
+
                     return new LayeCst.TypeCast(value.SourceSpan, value, targetType);
+                }
+                else if (targetType is SymbolType.Pointer pointer)
+                {
+                    if (value is LayeCst.NullPtr nullptr)
+                        return new LayeCst.NullPtr(nullptr.Literal, targetType, pointer.ElementType);
+
+                    return new LayeCst.TypeCast(value.SourceSpan, value, targetType);
+                }
             } break;
 
             case SymbolType.UntypedInteger:
@@ -1449,7 +1462,7 @@ internal sealed class LayeChecker
                     if (value is LayeCst.Integer _int && _int.Type is SymbolType.UntypedInteger)
                         value = new LayeCst.Integer(_int.Literal, new SymbolType.Integer(false));
 
-                    return new LayeCst.TypeCast(value.SourceSpan, value, new SymbolType.RawPtr());
+                    return new LayeCst.TypeCast(value.SourceSpan, value, SymbolTypes.RawPtr);
                 }
             } break;
 
@@ -1469,7 +1482,9 @@ internal sealed class LayeChecker
 
             case SymbolType.Pointer pointerType:
             {
-                if (targetType is SymbolType.Pointer _targetPointerType && _targetPointerType.ElementType == pointerType.ElementType)
+                if (targetType is SymbolType.RawPtr)
+                    return new LayeCst.TypeCast(value.SourceSpan, value, targetType);
+                else if (targetType is SymbolType.Pointer _targetPointerType && _targetPointerType.ElementType == pointerType.ElementType)
                 {
                     if (pointerType.Access == AccessKind.ReadWrite)
                         return new LayeCst.TypeCast(value.SourceSpan, value, pointerType);
@@ -1479,7 +1494,7 @@ internal sealed class LayeChecker
             case SymbolType.Buffer bufferType:
             {
                 if (targetType is SymbolType.RawPtr)
-                    return new LayeCst.TypeCast(value.SourceSpan, value, new SymbolType.RawPtr());
+                    return new LayeCst.TypeCast(value.SourceSpan, value, SymbolTypes.RawPtr);
                 else if (targetType is SymbolType.Buffer _targetBufferType && _targetBufferType.ElementType == bufferType.ElementType)
                 {
                     if (bufferType.Access == AccessKind.ReadWrite)

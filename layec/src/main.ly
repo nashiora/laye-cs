@@ -26,11 +26,6 @@
 
 */
 
-struct test
-{
-    uint value;
-}
-
 // TODO(local): compile `main` into `_laye_start`, overwrite the entry point with actual startup logic to turn this into a string slice
 void main(i32 argc, u8 readonly[*] readonly[*] argv)
 {
@@ -52,12 +47,6 @@ void laye_main(string[] args)
 {
     printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
 
-    uint temp = 1;
-    while (temp < 10000000)
-    {
-        printf("  %llu   %llu%c", uint_num_digits(temp), temp, 10);
-        temp = temp * 10;
-    }
-
     laye_lexer lLexer;
+    laye_lexer_open_file(&lLexer, "./layec/src/main.ly");
 }

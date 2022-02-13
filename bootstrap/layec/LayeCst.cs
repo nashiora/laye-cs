@@ -31,6 +31,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Float(LayeToken.Float Literal, SymbolType Type) : Expr(Literal.SourceSpan, Type);
     public sealed record class Bool(LayeToken.Keyword Literal, SymbolType Type) : Expr(Literal.SourceSpan, Type);
     public sealed record class String(LayeToken.String Literal, SymbolType Type) : Expr(Literal.SourceSpan, Type);
+    public sealed record class NullPtr(LayeToken.Keyword Literal, SymbolType Type, SymbolType ElementType) : Expr(Literal.SourceSpan, Type);
 
     public sealed record class LoadValue(SourceSpan SourceSpan, Symbol Symbol) : Expr(SourceSpan, Symbol.Type!);
     public sealed record class NamedIndex(Expr TargetExpression, LayeToken.Identifier Name, SymbolType FieldType)

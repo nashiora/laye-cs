@@ -203,7 +203,7 @@ internal sealed class LlvmBackend : IBackend
 
             //case SymbolType.Bool: return GetLlvmType(SymbolTypes.UInt);
             case SymbolType.Bool: return Int1TypeInContext(Context);
-            case SymbolType.SizedBool _bx: return IntTypeInContext(Context, _bx.BitCount);
+            //case SymbolType.SizedBool _bx: return IntTypeInContext(Context, _bx.BitCount);
 
             case SymbolType.Integer: return Int64TypeInContext(Context);
             case SymbolType.SizedInteger _ix: return IntTypeInContext(Context, _ix.BitCount);
@@ -397,7 +397,9 @@ internal sealed class LlvmBackend : IBackend
                 if (_else is not null)
                     elseBlock = builder.AppendBlock($"if.else");
 
-                var ifMergeBlock = builder.AppendBlock("if.continue");
+                LLVMBasicBlockRef? ifMergeBlock = null;
+                if (!ifStmt.CheckReturns())
+                    ifMergeBlock = builder.AppendBlock("if.continue");
 
                 builder.BuildBranch(ifCheckBlocks[0]);
 
@@ -405,7 +407,7 @@ internal sealed class LlvmBackend : IBackend
                 {
                     var checkBlock = ifCheckBlocks[i];
                     var passBlock = ifPassBlocks[i];
-                    var failBlock = i == _ifs.Count - 1 ? (elseBlock ?? ifMergeBlock) : ifCheckBlocks[i + 1];
+                    var failBlock = (i == _ifs.Count - 1 ? (elseBlock ?? ifMergeBlock) : ifCheckBlocks[i + 1])!.Value;
 
                     builder.PositionAtEnd(checkBlock);
                     {
@@ -417,7 +419,7 @@ internal sealed class LlvmBackend : IBackend
                     {
                         CompileStatement(builder, _ifs[i].IfBody);
                         if (!_ifs[i].IfBody.CheckReturns())
-                            builder.BuildBranch(ifMergeBlock);
+                            builder.BuildBranch(ifMergeBlock!.Value);
                     }
                 }
 
@@ -427,11 +429,12 @@ internal sealed class LlvmBackend : IBackend
                     {
                         CompileStatement(builder, _else);
                         if (!_else.CheckReturns())
-                            builder.BuildBranch(ifMergeBlock);
+                            builder.BuildBranch(ifMergeBlock!.Value);
                     }
                 }
 
-                builder.PositionAtEnd(ifMergeBlock);
+                if (ifMergeBlock.HasValue)
+                    builder.PositionAtEnd(ifMergeBlock!.Value);
             } break;
 
             case LayeCst.While whileStmt:
@@ -573,6 +576,9 @@ internal sealed class LlvmBackend : IBackend
 
         switch (expression)
         {
+            case LayeCst.Bool _bool: return new LlvmValue<SymbolType.Bool>(ConstInt(GetLlvmType(SymbolTypes.Bool), _bool.Literal.Kind == Keyword.True ? 1UL : 0UL, false), SymbolTypes.Bool);
+            case LayeCst.NullPtr _nullptr: return new TypedLlvmValue(LLVM.ConstPointerNull(GetLlvmType(_nullptr.ElementType)), _nullptr.Type);
+
             case LayeCst.String _string:
             {
                 TypedLlvmValue stringValue;

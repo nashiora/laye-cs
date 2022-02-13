@@ -8,7 +8,7 @@ internal sealed class LayeParser
 {
     public static LayeAstRoot? ParseSyntaxFromFile(string sourceFilePath, List<Diagnostic> diagnostics)
     {
-        sourceFilePath = sourceFilePath.Replace('/', '\\');
+        sourceFilePath = sourceFilePath.Replace('\\', '/');
 
         if (!LayeLexer.ReadTokensFromFile(sourceFilePath, diagnostics, out var tokens))
             return null;
@@ -1094,6 +1094,21 @@ internal sealed class LayeParser
         {
             Advance(); // identifier
             result = new LayeAst.NameLookup(ident);
+        }
+        else if (CheckKeyword(Keyword.NullPtr, out var nullptrKw))
+        {
+            Advance(); // `nullptr`
+            result = new LayeAst.NullPtr(nullptrKw);
+        }
+        else if (CheckKeyword(Keyword.True, out var trueKw))
+        {
+            Advance(); // `true`
+            result = new LayeAst.Bool(trueKw);
+        }
+        else if (CheckKeyword(Keyword.False, out var falseKw))
+        {
+            Advance(); // `false`
+            result = new LayeAst.Bool(falseKw);
         }
         else if (Check<LayeToken.Integer>(out var integerLit))
         {

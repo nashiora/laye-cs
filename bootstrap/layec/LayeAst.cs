@@ -177,6 +177,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Float(LayeToken.Float Literal) : Expr(Literal.SourceSpan);
     public sealed record class Bool(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
     public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan);
+    public sealed record class NullPtr(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
 
     public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan);
     public sealed record class PathLookup(PathPart Path) : Expr(Path.SourceSpan);

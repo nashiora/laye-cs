@@ -127,7 +127,7 @@ internal static class SymbolTypes
     public static readonly SymbolType.Void Void = new();
     public static readonly SymbolType.Rune Rune = new();
 
-    public static readonly SymbolType.UntypedBool UntypedBool = new();
+    //public static readonly SymbolType.UntypedBool UntypedBool = new();
     public static readonly SymbolType.Bool Bool = new();
 
 #if false
@@ -141,19 +141,15 @@ internal static class SymbolTypes
     public static readonly SymbolType.Integer Int = new(true);
     public static readonly SymbolType.Integer UInt = new(false);
 
-#if false
     public static readonly SymbolType.SizedInteger I8 = new(true, 8);
     public static readonly SymbolType.SizedInteger I16 = new(true, 16);
     public static readonly SymbolType.SizedInteger I32 = new(true, 32);
     public static readonly SymbolType.SizedInteger I64 = new(true, 64);
-#endif
 
     public static readonly SymbolType.SizedInteger U8 = new(false, 8);
-#if false
     public static readonly SymbolType.SizedInteger U16 = new(false, 16);
     public static readonly SymbolType.SizedInteger U32 = new(false, 32);
     public static readonly SymbolType.SizedInteger U64 = new(false, 64);
-#endif
 
     public static readonly SymbolType.UntypedFloat UntypedFloat = new();
     public static readonly SymbolType.Float Float = new();
@@ -185,9 +181,9 @@ internal abstract record class SymbolType(string Name)
     public sealed record class Void() : SymbolType("void");
     public sealed record class Rune() : SymbolType("rune");
 
-    public sealed record class UntypedBool() : SymbolType("<untyped bool>");
+    //public sealed record class UntypedBool() : SymbolType("<untyped bool>");
     public sealed record class Bool() : SymbolType("bool");
-    public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
+    //public sealed record class SizedBool(uint BitCount) : SymbolType($"b{BitCount}");
 
     public sealed record class UntypedInteger(bool Signed) : SymbolType($"<untyped {(Signed ? "" : "u")}int>");
     public sealed record class Integer(bool Signed) : SymbolType(Signed ? "int" : "uint");
