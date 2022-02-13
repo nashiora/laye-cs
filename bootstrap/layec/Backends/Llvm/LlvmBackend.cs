@@ -375,27 +375,63 @@ internal sealed class LlvmBackend : IBackend
 
             case LayeCst.If ifStmt:
             {
-                var passBlock = builder.AppendBlock("if.pass");
-                var failBlock = builder.AppendBlock("if.fail");
-                var continueBlock = builder.AppendBlock("if.continue");
+                var _ifs = new List<LayeCst.If>() { ifStmt };
+                var _else = ifStmt.ElseBody;
 
-                var condition = CompileExpression(builder, ifStmt.Condition);
-                builder.BuildConditionalBranch(condition, passBlock, failBlock);
-
-                builder.PositionAtEnd(passBlock);
+                while (_else is LayeCst.If _nextIf)
                 {
-                    CompileStatement(builder, ifStmt.IfBody);
-                    builder.BuildBranch(continueBlock);
+                    _ifs.Add(_nextIf);
+                    _else = _nextIf.ElseBody;
                 }
 
-                builder.PositionAtEnd(failBlock);
+                var ifCheckBlocks = new LLVMBasicBlockRef[_ifs.Count];
+                var ifPassBlocks = new LLVMBasicBlockRef[_ifs.Count];
+
+                for (int i = 0; i < _ifs.Count; i++)
                 {
-                    if (ifStmt.ElseBody is not null)
-                        CompileStatement(builder, ifStmt.ElseBody);
-                    builder.BuildBranch(continueBlock);
+                    ifCheckBlocks[i] = builder.AppendBlock($"if.check.{i}");
+                    ifPassBlocks[i] = builder.AppendBlock($"if.pass.{i}");
                 }
 
-                builder.PositionAtEnd(continueBlock);
+                LLVMBasicBlockRef? elseBlock = null;
+                if (_else is not null)
+                    elseBlock = builder.AppendBlock($"if.else");
+
+                var ifMergeBlock = builder.AppendBlock("if.continue");
+
+                builder.BuildBranch(ifCheckBlocks[0]);
+
+                for (int i = 0; i < _ifs.Count; i++)
+                {
+                    var checkBlock = ifCheckBlocks[i];
+                    var passBlock = ifPassBlocks[i];
+                    var failBlock = i == _ifs.Count - 1 ? (elseBlock ?? ifMergeBlock) : ifCheckBlocks[i + 1];
+
+                    builder.PositionAtEnd(checkBlock);
+                    {
+                        var condition = CompileExpression(builder, _ifs[i].Condition);
+                        builder.BuildConditionalBranch(condition, passBlock, failBlock);
+                    }
+
+                    builder.PositionAtEnd(passBlock);
+                    {
+                        CompileStatement(builder, _ifs[i].IfBody);
+                        if (!_ifs[i].IfBody.CheckReturns())
+                            builder.BuildBranch(ifMergeBlock);
+                    }
+                }
+
+                if (_else is not null)
+                {
+                    builder.PositionAtEnd(elseBlock!.Value);
+                    {
+                        CompileStatement(builder, _else);
+                        if (!_else.CheckReturns())
+                            builder.BuildBranch(ifMergeBlock);
+                    }
+                }
+
+                builder.PositionAtEnd(ifMergeBlock);
             } break;
 
             case LayeCst.While whileStmt:
@@ -942,6 +978,7 @@ internal sealed class LlvmFunctionBuilder
     private readonly List<LLVMBasicBlockRef> m_blocks = new();
     private int m_currentBlockIndex = -1;
 
+    public LLVMBasicBlockRef CurrentBlock => m_blocks[m_currentBlockIndex];
     public IEnumerable<LLVMBasicBlockRef> BasicBlocks => m_blocks;
 
     private readonly Dictionary<Symbol, LlvmValue<SymbolType.Pointer>> m_valueAddresses = new();

@@ -21,6 +21,17 @@ void string_builder_ensure_capacity(string_builder *sb, uint desired_capacity)
 	}
 }
 
+string string_builder_to_string(string_builder sb)
+{
+	u8 readonly[*] data = string_builder_data_get(sb);
+	uint length = string_builder_length_get(sb);
+
+	u8[*] result_data = malloc(sizeof(u8) * length);
+	memcpy(result_data, data, length);
+
+	return result_data[:length];
+}
+
 void string_builder_append_string(string_builder *sb, string v)
 {
 	uint sb_length = string_builder_length_get(*sb);
@@ -37,13 +48,20 @@ void string_builder_append_string(string_builder *sb, string v)
 	(*sb).length = required_capacity;
 }
 
-string string_builder_to_string(string_builder sb)
+void string_builder_append_uint(string_builder *sb, uint v)
 {
-	u8 readonly[*] data = string_builder_data_get(sb);
-	uint length = string_builder_length_get(sb);
 
-	u8[*] result_data = malloc(sizeof(u8) * length);
-	memcpy(result_data, data, length);
-
-	return result_data[:length];
 }
+
+/*
+void string_builder_append_int(string_builder *sb, int v)
+{
+	if (v < 0)
+	{
+		string_builder_append_string("-");
+		v = -v;
+	}
+
+	//string_builder_append_uint(cast(uint) v);
+}
+*/

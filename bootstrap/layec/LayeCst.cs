@@ -121,6 +121,8 @@ internal static class LayeCstExtensions
     {
         LayeCst.Return => true,
         LayeCst.Block block => block.Body.Any(child => child.CheckReturns()),
+        LayeCst.If _if => _if.IfBody.CheckReturns() && (_if.ElseBody?.CheckReturns() ?? true),
+        LayeCst.While _while => _while.WhileBody.CheckReturns() && (_while.ElseBody?.CheckReturns() ?? true),
         _ => false,
     };
 

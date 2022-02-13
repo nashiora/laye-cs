@@ -4,9 +4,10 @@
 // ! in progress
 // T needs testing, but looks to be implemented
 
-[T] Operator expressions
+[ ] Operator expressions
     [T] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
     [T] Prefix ops (&, *, -, not)
+    [ ] Explicit type casts
 [ ] Structure operations
     [X] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
@@ -49,7 +50,14 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
 
 void laye_main(string[] args)
 {
-    printf("Laye Stand-alone compiler%cVersion 0.1.0%c", 10, 10);
-    
+    printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
+
+    uint temp = 1;
+    while (temp < 10000000)
+    {
+        printf("  %llu   %llu%c", uint_num_digits(temp), temp, 10);
+        temp = temp * 10;
+    }
+
     laye_lexer lLexer;
 }
