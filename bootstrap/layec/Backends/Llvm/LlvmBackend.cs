@@ -483,6 +483,12 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildGetStructFieldAddress(target, namedIndex.Name.Image);
             }
 
+            case LayeCst.ValueAt valueAt:
+            {
+                var result = builder.BuildLoad(CompileExpressionAsLValue(builder, valueAt.Expression));
+                return new(result.Value, (SymbolType.Pointer)result.Type);
+            }
+
             case LayeCst.DynamicIndex dynamicIndex:
             {
                 var target = CompileExpressionAsLValue(builder, dynamicIndex.TargetExpression);
@@ -561,6 +567,53 @@ internal sealed class LlvmBackend : IBackend
                 return floatValue;
             }
 
+#if false
+            case LayeCst.LoadValue load: return builder.BuildLoad(builder.GetSymbolAddress(load.Symbol));
+
+            case LayeCst.NamedIndex namedIndex:
+            {
+                var target = CompileExpressionAsLValue(builder, namedIndex.TargetExpression);
+                return builder.BuildLoad(builder.BuildGetStructFieldAddress(target, namedIndex.Name.Image));
+            }
+
+            case LayeCst.ValueAt valueAt:
+            {
+                var valueAddress = CompileExpression(builder, valueAt.Expression);
+                return builder.BuildLoad(valueAddress);
+            }
+#endif
+
+            case LayeCst.DynamicIndex dynamicIndex:
+            {
+                var target = CompileExpression(builder, dynamicIndex.TargetExpression);
+                var targetStorage = builder.BuildAlloca(target.Type);
+                builder.BuildStore(target, targetStorage);
+
+                var indices = dynamicIndex.Arguments.Select(arg => CompileExpression(builder, arg)).ToArray();
+
+                switch (targetStorage.Type.ElementType)
+                {
+                    case SymbolType.Buffer bufferType:
+                    {
+                        Debug.Assert(indices.Length == 1);
+                        return builder.BuildLoad(builder.BuildGetBufferIndexAddress(targetStorage, indices[0]));
+                    }
+
+                    case SymbolType.Slice sliceType:
+                    {
+                        Debug.Assert(indices.Length == 1);
+                        return builder.BuildLoad(builder.BuildGetSliceIndexAddress(targetStorage, indices[0]));
+                    }
+
+                    default:
+                    {
+                        Console.WriteLine($"internal compiler error: unhandled dynamic index target type in LLVM backend ({target.Type})");
+                        Environment.Exit(1);
+                        return default!;
+                    }
+                }
+            }
+
             case LayeCst.StringLengthLookup stringLengthLookup:
             {
                 // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
@@ -616,11 +669,6 @@ internal sealed class LlvmBackend : IBackend
             }
 
             case LayeCst.AddressOf addr: return CompileExpressionAsLValue(builder, addr.Expression);
-            case LayeCst.ValueAt valueAt:
-            {
-                var valueAddress = CompileExpression(builder, valueAt.Expression);
-                return builder.BuildLoad(valueAddress);
-            }
 
             case LayeCst.LogicalNot not:
             {

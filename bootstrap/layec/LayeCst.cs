@@ -128,6 +128,7 @@ internal static class LayeCstExtensions
     {
         LayeCst.LoadValue => true,
         LayeCst.NamedIndex => true,
+        LayeCst.ValueAt => true,
         LayeCst.DynamicIndex dyn => dyn.TargetExpression.CheckIsLValue(),
         // TODO(local): a typecast is also valid, but we aren't worried about that for now.
         _ => false,

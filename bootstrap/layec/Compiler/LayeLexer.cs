@@ -475,7 +475,7 @@ internal sealed class LayeLexer
 #if ALLOW_ARBITRARY_SIZED_PRIMITIVES
                 if (identifier[0] == 'i' || identifier[0] == 'u' || identifier[0] == 'f')
                 {
-                    if (!identifier.Skip(1).Any(c => !char.IsDigit(c)))
+                    if (!identifier.Skip(1).Any(c => !char.IsDigit(c)) && identifier.Length > 1)
                     {
                         var kw = identifier[0] == 'i' ? Keyword.SizedInt : identifier[0] == 'u' ? Keyword.SizedUInt : Keyword.SizedFloat;
                         return new LayeToken.Keyword(span, kw, uint.Parse(identifier.AsSpan()[1..]));
