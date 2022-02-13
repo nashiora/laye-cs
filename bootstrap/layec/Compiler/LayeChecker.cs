@@ -711,17 +711,33 @@ internal sealed class LayeChecker
                     return null;
                 }
 
+                string indexName = namedIndexExpr.Name.Image;
+
                 switch (target.Type)
                 {
                     case SymbolType.String:
                     {
-                        if (namedIndexExpr.Name.Image == "length")
+                        if (indexName == "length")
                             return new LayeCst.StringLengthLookup(namedIndexExpr.SourceSpan, target);
-                        else if (namedIndexExpr.Name.Image == "data")
+                        else if (indexName == "data")
                             return new LayeCst.StringDataLookup(namedIndexExpr.SourceSpan, target);
 
-                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `string` does not contain a field named `{namedIndexExpr.Name.Image}`"));
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `string` does not contain a field named `{indexName}`"));
                         return null;
+                    }
+
+                    case SymbolType.Struct structType:
+                    {
+                        var fields = structType.Fields;
+
+                        var fieldType = fields.Where(f => f.Name == indexName).Select(f => f.Type).SingleOrDefault();
+                        if (fieldType is null)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"struct `{structType.Name}` does not contain a field named `{indexName}`"));
+                            return null;
+                        }
+
+                        return new LayeCst.NamedIndex(target, namedIndexExpr.Name, fieldType);
                     }
 
                     default:

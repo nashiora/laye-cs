@@ -477,6 +477,12 @@ internal sealed class LlvmBackend : IBackend
         {
             case LayeCst.LoadValue load: return builder.GetSymbolAddress(load.Symbol);
 
+            case LayeCst.NamedIndex namedIndex:
+            {
+                var target = CompileExpressionAsLValue(builder, namedIndex.TargetExpression);
+                return builder.BuildGetStructFieldAddress(target, namedIndex.Name.Image);
+            }
+
             case LayeCst.DynamicIndex dynamicIndex:
             {
                 var target = CompileExpressionAsLValue(builder, dynamicIndex.TargetExpression);
@@ -1017,6 +1023,27 @@ internal sealed class LlvmFunctionBuilder
         CheckCanBuild();
         Debug.Assert(value.Type == address.Type.ElementType, $"type checker did not ensure value and address types were the same ({value.Type} != {address.Type.ElementType})");
         LLVM.BuildStore(Builder, value.Value, address.Value);
+    }
+
+    public LlvmValue<SymbolType.Pointer> BuildGetStructFieldAddress(TypedLlvmValue structTarget, string fieldName)
+    {
+        CheckCanBuild();
+        Debug.Assert(structTarget.Type is SymbolType.Pointer targetAddr && targetAddr.ElementType is SymbolType.Struct);
+
+        var structType = (SymbolType.Struct)((SymbolType.Pointer)structTarget.Type).ElementType;
+        var structFields = structType.Fields;
+
+        uint fieldIndex;
+        for (fieldIndex = 0; fieldIndex < structFields.Length; fieldIndex++)
+        {
+            if (structFields[fieldIndex].Name == fieldName)
+                break;
+        }
+
+        var field = structFields[fieldIndex];
+
+        var address = BuildStructGEP(Builder, structTarget.Value, fieldIndex, "struct_field_addr");
+        return new(address, new SymbolType.Pointer(field.Type));
     }
 
     public LlvmValue<SymbolType.Pointer> BuildGetBufferIndexAddress(TypedLlvmValue bufferTarget, TypedLlvmValue index)

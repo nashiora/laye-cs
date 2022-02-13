@@ -11,8 +11,8 @@
     [ ] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
 [ ] Branch structures
-    [ ] If/else `if (expr) { } else if (expr) { } else { }
-    [ ] While `while (expr) { } else { }`
+    [X] If/else `if (expr) { } else if (expr) { } else { }
+    [X] While `while (expr) { } else { }`
     [ ] C-style For `for (binding or expr; expr; expr) { } else { }`
     [ ] Switch statements `switch (expr) { case Constant: <scoped exprs, no break needed> default: <same> }`
 [ ] Tagged unions
@@ -22,6 +22,11 @@
     [ ] Switch statement support for unions (optional) `switch (expr) { case UnionName::VariantName: <scoped exprs, no break needed> default: <same> }`
 
 */
+
+struct test
+{
+    uint value;
+}
 
 // TODO(local): compile `main` into `_laye_start`, overwrite the entry point with actual startup logic to turn this into a string slice
 void main(i32 argc, u8 readonly[*] readonly[*] argv)
@@ -44,6 +49,10 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
     string[] args = argvStorage[:argc];
     //*/
     // end program startup logic
+
+    test t;
+    t.value = 10;
+    printf("t.value = %d%c", t.value, 10);
 
     if (1 == 1.0) printf("Hello, hunter!%c", 10);
     else printf("Hello, world!%c", 10);
