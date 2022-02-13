@@ -10,6 +10,7 @@
 [!] Structure operations
     [X] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
+[ ] Zero initializers
 [ ] Branch structures
     [X] If/else `if (expr) { } else if (expr) { } else { }
     [X] While `while (expr) { } else { }`
@@ -96,4 +97,5 @@ void laye_main(string[] args)
 
     string sb_string = string_builder_to_string(sb);
     printf("%c%.*s%c", 10, sb_string.length, sb_string.data, 10);
+    printf("%s%c", string_to_cstring(sb_string), 10);
 }

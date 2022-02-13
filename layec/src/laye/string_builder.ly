@@ -1,10 +1,10 @@
 struct string_builder
 {
-    // private
-    // u8 [dynamic]value;
-    uint length;
-    uint capacity;
-    u8[*] data;
+	// private
+	// u8 [dynamic]value;
+	uint length;
+	uint capacity;
+	u8[*] data;
 }
 
 void string_builder_init(string_builder *sb)
@@ -15,20 +15,9 @@ void string_builder_init(string_builder *sb)
 	(*sb).data = data;
 }
 
-uint string_builder_length_get(string_builder sb)
-{
-	return sb.length;
-}
-
-uint string_builder_capacity_get(string_builder sb)
-{
-	return sb.capacity;
-}
-
-u8[*] string_builder_data_get(string_builder sb)
-{
-	return sb.data;
-}
+uint string_builder_length_get(string_builder sb) { return sb.length; }
+uint string_builder_capacity_get(string_builder sb) { return sb.capacity; }
+u8 readonly[*] string_builder_data_get(string_builder sb) { return sb.data; }
 
 void string_builder_ensure_capacity(string_builder *sb, uint desired_capacity)
 {
@@ -58,7 +47,7 @@ void string_builder_append_string(string_builder *sb, string v)
 
 string string_builder_to_string(string_builder sb)
 {
-	u8[*] data = string_builder_data_get(sb);
+	u8 readonly[*] data = string_builder_data_get(sb);
 	uint length = string_builder_length_get(sb);
 
 	u8[*] result_data = malloc(sizeof(u8) * length);
