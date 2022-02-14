@@ -49,6 +49,17 @@ void laye_main(string[] args)
 {
     printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
 
+    {
+        printf("invoked with the following arguments:%c", 10);
+
+        uint i = 0;
+        while (i < args.length)
+        {
+            printf("  %.*s%c", args[i].length, args[i].data, 10);
+            i = i + 1;
+        }
+    }
+
     source sourceFile = source_create_from_file("./layec/src/main.ly");
     if (not sourceFile.is_valid)
     {

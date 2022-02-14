@@ -789,6 +789,15 @@ internal sealed class LayeChecker
                         return null;
                     }
 
+                    case SymbolType.Slice sliceType:
+                    {
+                        if (indexName == "length")
+                            return new LayeCst.SliceLengthLookup(namedIndexExpr.SourceSpan, target);
+
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `slice` does not contain a field named `{indexName}`"));
+                        return null;
+                    }
+
                     case SymbolType.Struct structType:
                     {
                         var fields = structType.Fields;

@@ -40,6 +40,8 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
         : Expr(SourceSpan, new SymbolType.Integer(false));
     public sealed record class StringDataLookup(SourceSpan SourceSpan, Expr TargetExpression)
         : Expr(SourceSpan, new SymbolType.Buffer(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly));
+    public sealed record class SliceLengthLookup(SourceSpan SourceSpan, Expr TargetExpression)
+        : Expr(SourceSpan, new SymbolType.Integer(false));
 
     public sealed record class DynamicIndex(SourceSpan SourceSpan, Expr TargetExpression, Expr[] Arguments, SymbolType Type)
         : Expr(SourceSpan, Type);

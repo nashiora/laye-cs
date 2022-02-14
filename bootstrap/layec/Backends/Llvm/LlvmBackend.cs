@@ -668,6 +668,15 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoadStringLengthFromAddress(stringStorageAddress);
             }
 
+            case LayeCst.SliceLengthLookup sliceLengthLookup:
+            {
+                // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
+                var sliceValue = CompileExpression(builder, sliceLengthLookup.TargetExpression);
+                var stringStorageAddress = builder.BuildAlloca(sliceLengthLookup.TargetExpression.Type, "slice_tempstorage");
+                builder.BuildStore(sliceValue, stringStorageAddress);
+                return builder.BuildLoadSliceLengthFromAddress(stringStorageAddress);
+            }
+
             case LayeCst.StringDataLookup stringDataLookup:
             {
                 // TODO(local): probably wrap this up into builder.BuildLoadStringLengthFromValue
@@ -1227,6 +1236,13 @@ internal sealed class LlvmFunctionBuilder
         CheckCanBuild();
         var dataAddress = BuildStructGEP(Builder, stringAddress.Value, 1, "string.data.addr");
         return new(LLVM.BuildLoad(Builder, dataAddress, "string.data"), SymbolTypes.ReadOnlyU8Buffer);
+    }
+
+    public LlvmValue<SymbolType.Integer> BuildLoadSliceLengthFromAddress(LlvmValue<SymbolType.Pointer> sliceAddress)
+    {
+        CheckCanBuild();
+        var lengthAddress = BuildStructGEP(Builder, sliceAddress.Value, 0, "slice.length.addr");
+        return new(LLVM.BuildLoad(Builder, lengthAddress, "slice.length"), SymbolTypes.UInt);
     }
 
     public LlvmValue<SymbolType.Slice> BuildSliceFromBuffer(TypedLlvmValue bufferValue, TypedLlvmValue? offset, TypedLlvmValue count)
