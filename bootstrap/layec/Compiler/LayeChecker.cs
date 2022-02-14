@@ -85,6 +85,71 @@ internal sealed class LayeChecker
             }
         }
 
+        // create type symbols first, repeating until finished bc no dependency tree
+        {
+            bool isTypeCreationComplete = true;
+
+            uint attemptCount = 0;
+            uint MaxAttemptCount = 1_000;
+
+            while (attemptCount < MaxAttemptCount)
+            {
+                isTypeCreationComplete = true;
+                attemptCount++;
+
+                bool isRequired = attemptCount == MaxAttemptCount - 1;
+
+                foreach (var astRoot in m_syntax)
+                {
+                    var topLevelNodes = astRoot.TopLevelNodes;
+                    foreach (var node in topLevelNodes)
+                    {
+                        switch (node)
+                        {
+                            case LayeAst.StructDeclaration structDecl:
+                            {
+                                var sym = (Symbol.Struct)syms[structDecl];
+                                if (sym.Type is not null) continue;
+
+                                bool structBuildFailed = false;
+
+                                var fields = new (SymbolType, string)[structDecl.Fields.Length];
+                                for (int i = 0; i < fields.Length; i++)
+                                {
+                                    var field = structDecl.Fields[i];
+
+                                    var fieldType = ResolveType(field.Binding.BindingType, isRequired);
+                                    if (fieldType is null)
+                                    {
+                                        if (isRequired)
+                                        {
+                                            AssertHasErrors("resolving struct field type");
+                                            return Array.Empty<LayeCstRoot>();
+                                        }
+                                        else
+                                        {
+                                            structBuildFailed = true;
+                                            break;
+                                        }
+                                    }
+
+                                    fields[i] = (fieldType, field.Binding.BindingName.Image);
+                                }
+
+                                if (structBuildFailed)
+                                {
+                                    isTypeCreationComplete = false;
+                                    break;
+                                }
+
+                                sym.Type = new SymbolType.Struct(structDecl.Name.Image, fields.ToArray());
+                            } break;
+                        }
+                    }
+                }
+            }
+        }
+
         // populate symbol data
         foreach (var astRoot in m_syntax)
         {
@@ -93,25 +158,7 @@ internal sealed class LayeChecker
             {
                 switch (node)
                 {
-                    case LayeAst.StructDeclaration structDecl:
-                    {
-                        var sym = (Symbol.Struct)syms[structDecl];
-
-                        var fields = new List<(SymbolType, string)>();
-                        foreach (var field in structDecl.Fields)
-                        {
-                            var fieldType = ResolveType(field.Binding.BindingType);
-                            if (fieldType is null)
-                            {
-                                AssertHasErrors("resolving struct field type");
-                                return Array.Empty<LayeCstRoot>();
-                            }
-
-                            fields.Add((fieldType, field.Binding.BindingName.Image));
-                        }
-
-                        sym.Type = new SymbolType.Struct(structDecl.Name.Image, fields.ToArray());
-                    } break;
+                    case LayeAst.StructDeclaration structDecl: break;
 
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
@@ -192,7 +239,7 @@ internal sealed class LayeChecker
         return cstRoots.ToArray();
     }
 
-    private SymbolType? ResolveType(LayeAst.Type astType)
+    private SymbolType? ResolveType(LayeAst.Type astType, bool reportErrors = true)
     {
         switch (astType)
         {
@@ -206,7 +253,8 @@ internal sealed class LayeChecker
                         var symbol = CurrentScope.LookupSymbol(namePart.Name.Image);
                         if (symbol is null)
                         {
-                            m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"the name `{namePart.Name.Image}` does not exist in the current context"));
+                            if (reportErrors)
+                                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"the name `{namePart.Name.Image}` does not exist in the current context"));
                             return null;
                         }
 
@@ -216,7 +264,8 @@ internal sealed class LayeChecker
 
                             default:
                             {
-                                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"`{namePart.Name.Image}` is not a type"));
+                                if (reportErrors)
+                                    m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"`{namePart.Name.Image}` is not a type"));
                                 return null;
                             }
                         }
@@ -224,7 +273,8 @@ internal sealed class LayeChecker
 
                     default:
                     {
-                        m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unable to resolve path)"));
+                        if (reportErrors)
+                            m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, "failed to resolve type (unable to resolve path)"));
                         return null;
                     }
                 }
@@ -269,7 +319,8 @@ internal sealed class LayeChecker
                 var elementType = ResolveType(pointerType.ElementType);
                 if (elementType is null)
                 {
-                    AssertHasErrors("resolving pointer element type");
+                    if (reportErrors)
+                        AssertHasErrors("resolving pointer element type");
                     return null;
                 }
 
@@ -281,7 +332,8 @@ internal sealed class LayeChecker
                 var elementType = ResolveType(bufferType.ElementType);
                 if (elementType is null)
                 {
-                    AssertHasErrors("resolving buffer element type");
+                    if (reportErrors)
+                        AssertHasErrors("resolving buffer element type");
                     return null;
                 }
 
@@ -293,7 +345,8 @@ internal sealed class LayeChecker
                 var elementType = ResolveType(sliceType.ElementType);
                 if (elementType is null)
                 {
-                    AssertHasErrors("resolving slice element type");
+                    if (reportErrors)
+                        AssertHasErrors("resolving slice element type");
                     return null;
                 }
 
@@ -305,7 +358,8 @@ internal sealed class LayeChecker
                 var returnType = ResolveType(functionType.ReturnType);
                 if (returnType is null)
                 {
-                    AssertHasErrors("resolving function return type");
+                    if (reportErrors)
+                        AssertHasErrors("resolving function return type");
                     return null;
                 }
 
@@ -315,7 +369,8 @@ internal sealed class LayeChecker
                     var paramType = ResolveType(functionType.ParameterTypes[i]);
                     if (paramType is null)
                     {
-                        AssertHasErrors("resolving function parameter type");
+                        if (reportErrors)
+                            AssertHasErrors("resolving function parameter type");
                         return null;
                     }
 
@@ -327,7 +382,8 @@ internal sealed class LayeChecker
 
             default:
             {
-                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"failed to resolve type (unrecognized type {astType.GetType().Name})"));
+                if (reportErrors)
+                    m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"failed to resolve type (unrecognized type {astType.GetType().Name})"));
                 return null;
             }
         }

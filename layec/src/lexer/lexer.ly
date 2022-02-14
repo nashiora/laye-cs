@@ -1,24 +1,38 @@
 
 struct laye_lexer
 {
-	// TODO(local): true/false literals
-	bool is_valid;
+	uint currentIndex;
+
+	uint currentColumn;
+	uint currentLine;
 }
 
 struct c_lexer
 {
+}
+
+struct laye_token
+{
+	source_span sourceSpan;
 	bool is_valid;
 }
 
-/*
-FILE *f = fopen("textfile.txt", "rb");
-fseek(f, 0, SEEK_END);
-long fsize = ftell(f);
-fseek(f, 0, SEEK_SET);
+struct laye_token_list
+{
+	laye_token[] tokens;
+	bool is_valid;
+}
 
-char *string = malloc(fsize + 1);
-fread(string, fsize, 1, f);
-fclose(f);
+laye_token_list laye_lexer_read_tokens(source source)
+{
+	laye_token_list resultTokens;
 
-string[fsize] = 0;
-*/
+	if (not source.is_valid)
+		return resultTokens;
+
+	string sourceText = source.text;
+
+	resultTokens.is_valid = true;
+
+	return resultTokens;
+}

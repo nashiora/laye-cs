@@ -4,6 +4,8 @@
 // ! in progress
 // T needs testing, but looks to be implemented
 
+[ ] Full type implementations
+    [ ] Rune type (and basic string UTF8 reading associated with it)
 [ ] Operator expressions
     [T] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
     [T] Prefix ops (&, *, -, not)
@@ -47,12 +49,23 @@ void laye_main(string[] args)
 {
     printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
 
-    laye_lexer lLexer;
-
     source sourceFile = source_create_from_file("./layec/src/main.ly");
     if (not sourceFile.is_valid)
+    {
         printf("failed to open file%c", 10);
-    else printf("opened file successfully%c", 10);
+        return;
+    }
+    
+    printf("opened file successfully%c", 10);
 
-    printf("%c%.*s%c", 10, sourceFile.text.length, sourceFile.text.data, 10);
+    //printf("%c%.*s%c", 10, sourceFile.text.length, sourceFile.text.data, 10);
+
+    laye_token_list sourceTokens = laye_lexer_read_tokens(sourceFile);
+    if (not sourceTokens.is_valid)
+    {
+        printf("failed to read tokens from file%c", 10);
+        return;
+    }
+    
+    printf("read tokens from file successfully%c", 10);
 }
