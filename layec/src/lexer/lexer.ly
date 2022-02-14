@@ -10,9 +10,12 @@ struct c_lexer
 	bool is_valid;
 }
 
-void laye_lexer_open_file(laye_lexer *ll, string fileName)
+bool laye_lexer_open_file(laye_lexer *ll, string fileName)
 {
 	rawptr fileHandle = fopen(string_to_cstring(fileName), "r");
-	// TODO(local): need nullptr to check for C errors now
+	if (fileHandle == nullptr)
+		return false;
+
 	fclose(fileHandle);
+	return true;
 }

@@ -1105,14 +1105,16 @@ internal sealed class LayeChecker
 
                     case Operator.CompareEqual:
                     {
-                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
-                            break;
-
-                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        if (leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric())
                         {
-                            AssertHasErrors("upcasting infix expressions");
-                            return null;
+                            if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                            {
+                                AssertHasErrors("upcasting infix expressions");
+                                return null;
+                            }
                         }
+                        else if (leftExpr.Type != rightExpr.Type)
+                            break;
 
                         return new LayeCst.CompareEqual(leftExpr, rightExpr);
                     }

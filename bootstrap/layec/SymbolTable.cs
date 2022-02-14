@@ -290,6 +290,19 @@ internal static class SymbolTypeExtensions
         }
     }
 
+    public static bool IsPointerLike(this SymbolType type)
+    {
+        switch (type)
+        {
+            case SymbolType.Pointer:
+            case SymbolType.RawPtr:
+            case SymbolType.Buffer:
+                return true;
+
+            default: return false;
+        }
+    }
+
     public static bool IsInteger(this SymbolType type)
     {
         switch (type)

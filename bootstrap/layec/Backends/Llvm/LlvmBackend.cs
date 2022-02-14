@@ -409,7 +409,7 @@ internal sealed class LlvmBackend : IBackend
                 {
                     var checkBlock = ifCheckBlocks[i];
                     var passBlock = ifPassBlocks[i];
-                    var failBlock = (i == _ifs.Count - 1 ? (elseBlock ?? ifMergeBlock) : ifCheckBlocks[i + 1])!.Value;
+                    var failBlock = ((i == _ifs.Count - 1 ? (elseBlock ?? ifMergeBlock) : ifCheckBlocks[i + 1]) ?? ifMergeBlock)!.Value;
 
                     builder.PositionAtEnd(checkBlock);
                     {
@@ -692,6 +692,8 @@ internal sealed class LlvmBackend : IBackend
                         return builder.BuildSliceFromBuffer(targetValue, offsetValue, countValue!);
                     }
 
+                    case SymbolType.Slice: return builder.BuildSliceFromSlice(targetValue, offsetValue, countValue!);
+
                     default:
                     {
                         Console.WriteLine($"internal compiler error: unhandled slice target in LLVM backend ({slice.TargetExpression.Type})");
@@ -699,6 +701,16 @@ internal sealed class LlvmBackend : IBackend
                         return default!;
                     }
                 }
+            }
+
+            case LayeCst.Substring substring:
+            {
+                var targetValue = CompileExpression(builder, substring.TargetExpression);
+
+                var offsetValue = substring.OffsetExpression is null ? null : CompileExpression(builder, substring.OffsetExpression);
+                var countValue = substring.CountExpression is null ? null : CompileExpression(builder, substring.CountExpression);
+
+                return builder.BuildSubstring(targetValue, offsetValue, countValue);
             }
 
             case LayeCst.SliceToString sliceToString:
@@ -1236,6 +1248,83 @@ internal sealed class LlvmFunctionBuilder
         return new LlvmValue<SymbolType.Slice>(stringStorageValue, sliceType);
     }
 
+    private LlvmValue<SymbolType.Integer> BuildLoadSliceLengthFromAddress(TypedLlvmValue sliceAddress) =>
+        new(BuildStructGEP(Builder, sliceAddress.Value, 0, "slice.length"), SymbolTypes.UInt);
+    private LlvmValue<SymbolType.Pointer> BuildLoadSliceDataFromAddress(TypedLlvmValue sliceAddress) =>
+        new(BuildStructGEP(Builder, sliceAddress.Value, 1, "slice.data"), new SymbolType.Pointer(((SymbolType.Slice)((SymbolType.Pointer)sliceAddress.Type).ElementType).ElementType, AccessKind.ReadOnly));
+
+    public LlvmValue<SymbolType.Slice> BuildSliceFromSlice(TypedLlvmValue sliceValue, TypedLlvmValue? offset, TypedLlvmValue? count)
+    {
+        CheckCanBuild();
+        Debug.Assert(sliceValue.Type is SymbolType.Slice);
+        if (offset is not null) Debug.Assert(offset.Type.IsInteger());
+        if (count is not null) Debug.Assert(count.Type.IsInteger());
+
+        var sliceType = (SymbolType.Slice)sliceValue.Type;
+        var sliceStorageAddress = BuildAlloca(sliceType, "slice_value");
+        LLVM.BuildStore(Builder, sliceValue.Value, sliceStorageAddress.Value);
+        var newSliceStorageAddress = BuildAlloca(sliceType, "slice_value");
+
+        if (offset is null)
+            offset = ConstInteger(SymbolTypes.UInt, 0);
+        else if (offset.Type != SymbolTypes.UInt)
+            offset = new(BuildIntCast(Builder, offset.Value, Backend.GetLlvmType(SymbolTypes.UInt), ""), SymbolTypes.UInt);
+
+        if (count is null)
+            count = BuildSubtract(BuildLoadSliceLengthFromAddress(sliceStorageAddress), offset);
+        else if (count.Type != SymbolTypes.UInt)
+            count = new(BuildIntCast(Builder, count.Value, Backend.GetLlvmType(SymbolTypes.UInt), ""), SymbolTypes.UInt);
+
+        var newSliceLengthAddress = BuildStructGEP(Builder, newSliceStorageAddress.Value, 0, "");
+        LLVM.BuildStore(Builder, count.Value, newSliceLengthAddress);
+
+        var newSlicePointerAddress = BuildStructGEP(Builder, newSliceStorageAddress.Value, 1, "");
+
+        var sliceDataAsInt = BuildPtrToInt(Builder, BuildLoadSliceDataFromAddress(sliceStorageAddress).Value, Backend.GetLlvmType(SymbolTypes.UInt), "");
+        var sliceDataPlusOffset = LLVM.BuildAdd(Builder, sliceDataAsInt, offset.Value, "");
+        var sliceDataAsPointer = BuildIntToPtr(Builder, sliceDataPlusOffset, Backend.GetLlvmType(new SymbolType.Pointer(sliceType.ElementType)), "");
+        LLVM.BuildStore(Builder, sliceDataAsPointer, newSlicePointerAddress);
+
+        var stringStorageValue = LLVM.BuildLoad(Builder, newSliceStorageAddress.Value, "slice_value.value");
+        return new LlvmValue<SymbolType.Slice>(stringStorageValue, sliceType);
+    }
+
+    public LlvmValue<SymbolType.String> BuildSubstring(TypedLlvmValue stringValue, TypedLlvmValue? offset, TypedLlvmValue? count)
+    {
+        CheckCanBuild();
+        Debug.Assert(stringValue.Type is SymbolType.String);
+        if (offset is not null) Debug.Assert(offset.Type.IsInteger());
+        if (count is not null) Debug.Assert(count.Type.IsInteger());
+
+        var stringType = SymbolTypes.String;
+        var stringStorageAddress = BuildAlloca(stringType, "string_value");
+        LLVM.BuildStore(Builder, stringValue.Value, stringStorageAddress.Value);
+        var newStringStorageAddress = BuildAlloca(stringType, "string_value");
+
+        if (offset is null)
+            offset = ConstInteger(SymbolTypes.UInt, 0);
+        else if (offset.Type != SymbolTypes.UInt)
+            offset = new(BuildIntCast(Builder, offset.Value, Backend.GetLlvmType(SymbolTypes.UInt), ""), SymbolTypes.UInt);
+
+        if (count is null)
+            count = BuildSubtract(BuildLoadStringLengthFromAddress(stringStorageAddress), offset);
+        else if (count.Type != SymbolTypes.UInt)
+            count = new(BuildIntCast(Builder, count.Value, Backend.GetLlvmType(SymbolTypes.UInt), ""), SymbolTypes.UInt);
+
+        var newStringLengthAddress = BuildStructGEP(Builder, newStringStorageAddress.Value, 0, "");
+        LLVM.BuildStore(Builder, count.Value, newStringLengthAddress);
+
+        var newStringPointerAddress = BuildStructGEP(Builder, newStringStorageAddress.Value, 1, "");
+
+        var stringDataAsInt = BuildPtrToInt(Builder, BuildLoadStringDataFromAddress(stringStorageAddress).Value, Backend.GetLlvmType(SymbolTypes.UInt), "");
+        var stringDataPlusOffset = LLVM.BuildAdd(Builder, stringDataAsInt, offset.Value, "");
+        var stringDataAsPointer = BuildIntToPtr(Builder, stringDataPlusOffset, Backend.GetLlvmType(SymbolTypes.ReadOnlyU8Buffer), "");
+        LLVM.BuildStore(Builder, stringDataAsPointer, newStringPointerAddress);
+
+        var stringStorageValue = LLVM.BuildLoad(Builder, newStringStorageAddress.Value, "string_value.value");
+        return new LlvmValue<SymbolType.String>(stringStorageValue, stringType);
+    }
+
     public LlvmValue<SymbolType.String> BuildSliceToString(TypedLlvmValue sliceValue)
     {
         CheckCanBuild();
@@ -1350,9 +1439,25 @@ internal sealed class LlvmFunctionBuilder
     {
         CheckCanBuild();
         Debug.Assert(left.Type == right.Type);
-        if (left.Type.IsInteger())
-            return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntEQ, left.Value, right.Value, ""), SymbolTypes.Bool);
-        else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOEQ, left.Value, right.Value, ""), SymbolTypes.Bool);
+        if (left.Type.IsNumeric())
+        {
+            if (left.Type.IsInteger())
+                return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntEQ, left.Value, right.Value, ""), SymbolTypes.Bool);
+            else return new(BuildFCmp(Builder, LLVMRealPredicate.LLVMRealOEQ, left.Value, right.Value, ""), SymbolTypes.Bool);
+        }
+        else if (left.Type.IsPointerLike())
+        {
+            var intType = Backend.GetLlvmType(SymbolTypes.UInt);
+            var leftAsInt = BuildPtrToInt(Builder, left.Value, intType, "");
+            var rightAsInt = BuildPtrToInt(Builder, right.Value, intType, "");
+            return new(BuildICmp(Builder, LLVMIntPredicate.LLVMIntEQ, leftAsInt, rightAsInt, ""), SymbolTypes.Bool);
+        }
+        else
+        {
+            Console.WriteLine($"internal compiler error: unhandled types {left.Type} and {right.Type} in LLVM compare equal");
+            Environment.Exit(1);
+            return default!;
+        }
     }
 
     public TypedLlvmValue BuildNotEqual(TypedLlvmValue left, TypedLlvmValue right)

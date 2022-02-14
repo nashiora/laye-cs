@@ -48,5 +48,8 @@ void laye_main(string[] args)
     printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
 
     laye_lexer lLexer;
-    laye_lexer_open_file(&lLexer, "./layec/src/main.ly");
+    bool openedFile = laye_lexer_open_file(&lLexer, "./layec/src/main.ly");
+    if (not openedFile)
+        printf("failed to open file%c", 10);
+    else printf("opened file successfully%c", 10);
 }
