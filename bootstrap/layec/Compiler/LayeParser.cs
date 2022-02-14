@@ -1159,6 +1159,38 @@ internal sealed class LayeParser
 
             return new LayeAst.LogicalNot(subexpr);
         }
+        else if (CheckKeyword(Keyword.Cast, out var castKw))
+        {
+            Advance(); // `cast`
+
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open `cast` argument"));
+                return null;
+            }
+
+            var type = TryReadTypeNode(false);
+            if (type is null)
+            {
+                AssertHasErrors("reading type in cast expression");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close `cast` argument"));
+                return null;
+            }
+
+            var expression = ReadPrimaryExpression();
+            if (expression is null)
+            {
+                AssertHasErrors("reading cast expression");
+                return null;
+            }
+
+            return new LayeAst.Cast(castKw, type, expression);
+        }
         else if (CheckKeyword(Keyword.SizeOf, out var sizeofKw))
         {
             Advance(); // `sizeof`

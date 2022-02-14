@@ -911,6 +911,21 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoad(resultStorage);
             }
 
+            case LayeCst.Cast cast:
+            {
+                var exprType = cast.TargetExpression.Type;
+                var targetType = cast.TargetType;
+
+                var expr = CompileExpression(builder, cast.TargetExpression);
+
+                if (targetType.IsInteger() && exprType.IsInteger())
+                    return builder.BuildIntToIntCast(expr, targetType);
+
+                Console.WriteLine($"internal compiler error: unhandled explicit cast from {cast.TargetExpression.Type} to {cast.TargetType}");
+                Environment.Exit(1);
+                return default!;
+            }
+
             case LayeCst.SizeOf _sizeof:
             {
                 var type = GetLlvmType(_sizeof.Type);
@@ -1630,6 +1645,7 @@ internal sealed class LlvmFunctionBuilder
 
     public TypedLlvmValue BuildCall(Symbol.Function functionSymbol, TypedLlvmValue[] arguments)
     {
+        CheckCanBuild();
         var functionValue = Backend.GetFunctionValueFromSymbol(functionSymbol);
         var functionResult = LLVM.BuildCall(Builder, functionValue, arguments.Select(a => a.Value).ToArray(), "");
 
@@ -1641,6 +1657,7 @@ internal sealed class LlvmFunctionBuilder
 
     public TypedLlvmValue BuildCall(LlvmValue<SymbolType.FunctionPointer> functionPointer, TypedLlvmValue[] arguments)
     {
+        CheckCanBuild();
         var functionValue = LLVM.BuildLoad(Builder, functionPointer.Value, "load.fnptr");
         var functionResult = LLVM.BuildCall(Builder, functionValue, arguments.Select(a => a.Value).ToArray(), "");
 
@@ -1650,32 +1667,44 @@ internal sealed class LlvmFunctionBuilder
         return new TypedLlvmValue(functionResult, functionPointer.Type!.ReturnType);
     }
 
+    public TypedLlvmValue BuildIntToIntCast(TypedLlvmValue value, SymbolType intType)
+    {
+        CheckCanBuild();
+        var cast = BuildIntCast(Builder, value.Value, Backend.GetLlvmType(intType), "");
+        return new(cast, intType);
+    }
+
     public LlvmValue<SymbolType.Pointer> BuildIntToPointerCast(TypedLlvmValue value, SymbolType.Pointer pointerType)
     {
+        CheckCanBuild();
         var cast = BuildIntToPtr(Builder, value.Value, Backend.GetLlvmType(pointerType), "int.to.pointer");
         return new(cast, pointerType);
     }
 
     public LlvmValue<SymbolType.Buffer> BuildIntToBufferCast(TypedLlvmValue value, SymbolType.Buffer bufferType)
     {
+        CheckCanBuild();
         var cast = BuildIntToPtr(Builder, value.Value, Backend.GetLlvmType(bufferType), "int.to.buffer");
         return new(cast, bufferType);
     }
 
     public LlvmValue<SymbolType.RawPtr> BuildIntToRawPtrCast(TypedLlvmValue value)
     {
+        CheckCanBuild();
         var cast = BuildIntToPtr(Builder, value.Value, PointerType(Int8TypeInContext(Context), 0), "int.to.rawptr");
         return new(cast, new());
     }
 
     public LlvmValue<SymbolType.RawPtr> BuildAnyPointerToRawPtrCast(TypedLlvmValue value)
     {
+        CheckCanBuild();
         var cast = BuildPointerCast(Builder, value.Value, PointerType(Int8TypeInContext(Context), 0), "anyptr.to.rawptr");
         return new(cast, new());
     }
 
     public TypedLlvmValue BuildRawPtrToAnyPointerCast(TypedLlvmValue value, SymbolType type)
     {
+        CheckCanBuild();
         var cast = BuildPointerCast(Builder, value.Value, Backend.GetLlvmType(type), "rawptr.to.anyptr");
         return new(cast, type);
     }

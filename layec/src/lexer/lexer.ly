@@ -10,12 +10,15 @@ struct c_lexer
 	bool is_valid;
 }
 
-bool laye_lexer_open_file(laye_lexer *ll, string fileName)
-{
-	rawptr fileHandle = fopen(string_to_cstring(fileName), "r");
-	if (fileHandle == nullptr)
-		return false;
+/*
+FILE *f = fopen("textfile.txt", "rb");
+fseek(f, 0, SEEK_END);
+long fsize = ftell(f);
+fseek(f, 0, SEEK_SET);
 
-	fclose(fileHandle);
-	return true;
-}
+char *string = malloc(fsize + 1);
+fread(string, fsize, 1, f);
+fclose(f);
+
+string[fsize] = 0;
+*/

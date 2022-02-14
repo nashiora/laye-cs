@@ -909,6 +909,25 @@ internal sealed class LayeChecker
 
             case LayeAst.GroupedExpression grouped: return CheckExpression(grouped.Expression);
 
+            case LayeAst.Cast cast:
+            {
+                var targetType = ResolveType(cast.TargetType);
+                if (targetType is null)
+                {
+                    AssertHasErrors("checking cast type");
+                    return null;
+                }
+
+                var targetExpression = CheckExpression(cast.TargetExpression);
+                if (targetType is null)
+                {
+                    AssertHasErrors("checking cast expression");
+                    return null;
+                }
+
+                return new LayeCst.Cast(cast.SourceSpan, targetType, targetExpression);
+            }
+
             case LayeAst.SizeOfExpression _sizeof:
             {
                 var expr = CheckExpression(_sizeof.Expression);

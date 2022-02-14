@@ -76,6 +76,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class LogicalAnd(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class LogicalOr(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
 
+    public sealed record class Cast(SourceSpan SourceSpan, SymbolType TargetType, Expr TargetExpression) : Expr(SourceSpan, TargetType);
     public sealed record class SizeOf(SourceSpan SourceSpan, SymbolType TargetType) : Expr(SourceSpan, SymbolTypes.UInt);
     public sealed record class TypeCast(SourceSpan SourceSpan, Expr Expression, SymbolType TargetType) : Expr(SourceSpan, TargetType);
     public sealed record class SliceToString(Expr SliceExpression) : Expr(SliceExpression.SourceSpan, new SymbolType.String());
