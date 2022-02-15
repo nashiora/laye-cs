@@ -22,6 +22,17 @@ rawptr nocontext default_allocator(uint size, rawptr memory)
 }
 */
 
+void panic(string message)
+{
+    printf("%.*s%c", message.length, message.data, 10);
+    abort();
+}
+
+void assert(bool test, string message)
+{
+    if (not test) panic(string_concat("assertion fail: ", message));
+}
+
 uint uint_num_digits(uint n)
 {
     if (n < 10) return 1;

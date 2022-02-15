@@ -4,7 +4,7 @@ struct source
 	string name;
 	string text;
 
-	bool is_valid;
+	bool isValid;
 }
 
 struct source_location
@@ -57,7 +57,7 @@ source source_create_from_file(string fileName)
 
 	string sourceText = fileBuffer[:cast(uint) fileSize];
 	resultSource.text = sourceText;
-	resultSource.is_valid = true;
+	resultSource.isValid = true;
 
 	return resultSource;
 }
@@ -84,9 +84,18 @@ string source_location_to_string(source_location sl)
 	return string_builder_to_string(sb);
 }
 
+source_span source_span_create(source_location start, source_location end)
+{
+	source_span result;
+	result.startLocation = start;
+	result.endLocation = end;
+	return result;
+}
+
 string source_span_name_get(source_span ss) { return source_location_name_get(ss.startLocation); }
 
 string source_span_to_string(source_span ss)
 {
-	return source_location_to_string(ss.startLocation);
+	string sourceText = ss.startLocation.source.text;
+	return sourceText[ss.startLocation.characterIndex:(ss.endLocation.characterIndex - ss.startLocation.characterIndex)];
 }

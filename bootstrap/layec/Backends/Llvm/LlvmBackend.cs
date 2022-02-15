@@ -278,7 +278,10 @@ internal sealed class LlvmBackend : IBackend
                     elementTypes[i] = GetLlvmType(field.Type);
                 }
 
-                return StructTypeInContext(Context, elementTypes, false);
+                var structType = LLVM.StructCreateNamed(Context, _struct.Name);
+                LLVM.StructSetBody(structType, elementTypes, false);
+
+                return structType;
             }
 
             default:
@@ -550,6 +553,12 @@ internal sealed class LlvmBackend : IBackend
                         return builder.BuildGetSliceIndexAddress(target, indices[0]);
                     }
 
+                    case SymbolType.String stringType:
+                    {
+                        Debug.Assert(indices.Length == 1);
+                        return builder.BuildGetStringIndexAddress(target, indices[0]);
+                    }
+
                     default:
                     {
                         Console.WriteLine($"internal compiler error: unhandled dynamic index target type in LLVM backend ({target.Type})");
@@ -648,6 +657,12 @@ internal sealed class LlvmBackend : IBackend
                     {
                         Debug.Assert(indices.Length == 1);
                         return builder.BuildLoad(builder.BuildGetSliceIndexAddress(targetStorage, indices[0]));
+                    }
+
+                    case SymbolType.String stringType:
+                    {
+                        Debug.Assert(indices.Length == 1);
+                        return builder.BuildLoad(builder.BuildGetStringIndexAddress(targetStorage, indices[0]));
                     }
 
                     default:
@@ -1222,6 +1237,17 @@ internal sealed class LlvmFunctionBuilder
         var sliceDataValue = LLVM.BuildLoad(Builder, BuildStructGEP(Builder, sliceTarget.Value, 1, "slice_data_value_addr"), "slice_data_value");
         var address = BuildInBoundsGEP(Builder, sliceDataValue, new[] { index.Value }, "slice_data_index_addr");
         return new(address, new SymbolType.Pointer(sliceElementType));
+    }
+
+    public LlvmValue<SymbolType.Pointer> BuildGetStringIndexAddress(TypedLlvmValue stringTarget, TypedLlvmValue index)
+    {
+        CheckCanBuild();
+        Debug.Assert(stringTarget.Type is SymbolType.Pointer targetAddr && targetAddr.ElementType is SymbolType.String);
+        Debug.Assert(index.Type == SymbolTypes.UInt);
+
+        var stringDataValue = LLVM.BuildLoad(Builder, BuildStructGEP(Builder, stringTarget.Value, 1, "string_data_value_addr"), "slice_data_value");
+        var address = BuildInBoundsGEP(Builder, stringDataValue, new[] { index.Value }, "string_data_index_addr");
+        return new(address, new SymbolType.Pointer(SymbolTypes.U8));
     }
 
     public LlvmValue<SymbolType.Integer> BuildLoadStringLengthFromAddress(LlvmValue<SymbolType.Pointer> stringAddress)

@@ -420,6 +420,12 @@ internal sealed class LayeChecker
                     return null;
                 }
 
+                if (sym.Type!.ReturnType != SymbolTypes.Void && !block.CheckReturns())
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(fnDecl.Body.SourceSpan, $"not all code paths return a value in function {sym.Name}"));
+                    return null;
+                }
+
                 functionBody = new LayeCst.BlockFunctionBody(block);
             } break;
 
@@ -890,6 +896,30 @@ internal sealed class LayeChecker
                         }
 
                         return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, sliceType.ElementType);
+                    }
+
+                    case SymbolType.String stringType:
+                    {
+                        if (indices.Length != 1)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"exactly one index argument required for type {target.Type}"));
+                            return null;
+                        }
+
+                        LayeCst.Expr index = indices[0];
+                        if (!index.Type.IsInteger() || index.Type is SymbolType.UntypedInteger)
+                        {
+                            var newIndex = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
+                            if (newIndex is null)
+                            {
+                                AssertHasErrors("checking string index implicit cast to uint");
+                                return null;
+                            }
+
+                            index = newIndex;
+                        }
+
+                        return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, SymbolTypes.U8);
                     }
 
                     default:
