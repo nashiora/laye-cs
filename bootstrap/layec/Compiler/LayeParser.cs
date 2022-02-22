@@ -838,6 +838,18 @@ internal sealed class LayeParser
 
             return new LayeAst.Return(returnKw, returnValue);
         }
+        else if (CheckKeyword(Keyword.Break, out var breakKw))
+        {
+            Advance(); // `break`
+
+            if (!ExpectDelimiter(Delimiter.SemiColon, out _))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to close return"));
+                return null;
+            }
+
+            return new LayeAst.Break(breakKw, null);
+        }
         else if (CheckKeyword(Keyword.If))
         {
             Advance(); // `if`

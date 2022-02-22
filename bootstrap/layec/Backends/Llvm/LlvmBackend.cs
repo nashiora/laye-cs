@@ -12,22 +12,6 @@ internal sealed class LlvmBackend : IBackend
     public LLVMContextRef Context;
     public LLVMModuleRef Module;
 
-#if false
-    public readonly SymbolType.Integer IntType = new(true);
-    public readonly SymbolType.Integer UIntType = new(false);
-
-    public readonly SymbolType.SizedInteger Int32Type = new(true, 32);
-    public readonly SymbolType.SizedInteger Int64Type = new(true, 64);
-    public readonly SymbolType.SizedInteger UInt64Type = new(false, 64);
-
-    public readonly SymbolType.String StringType = new();
-
-    public readonly SymbolType.Pointer U8PtrType = new(new SymbolType.SizedInteger(false, 8));
-    public readonly SymbolType.Buffer ReadOnlyU8BufType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
-    public readonly SymbolType.Slice U8SlcType = new(new SymbolType.SizedInteger(false, 8));
-    public readonly SymbolType.Slice ReadOnlyU8SlcType = new(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly);
-#endif
-
     private readonly Dictionary<Symbol.Function, LLVMValueRef> m_functions = new();
 
     private readonly HashSet<string> m_externLibraryReferences = new();
@@ -124,7 +108,7 @@ internal sealed class LlvmBackend : IBackend
 
         // i686-pc-windows-gnu
         string additionalFiles = string.Join(" ", filesToLinkAgainst.Select(f => $"\"{f}\""));
-        string clangArguments = $"\"{bcFileName}\" {additionalFiles} -g -v \"-o{outFileName}\"";
+        string clangArguments = $"\"{llFileName}\" {additionalFiles} -g -v \"-o{outFileName}\"";
         if (!string.IsNullOrWhiteSpace(options.TargetTriple))
             clangArguments += $" -target {options.TargetTriple}";
         if (options.IsExecutable)
@@ -935,6 +919,7 @@ internal sealed class LlvmBackend : IBackend
                 return builder.BuildLoad(resultStorage);
             }
 
+#if false
             case LayeCst.Cast cast:
             {
                 var exprType = cast.TargetExpression.Type;
@@ -949,6 +934,7 @@ internal sealed class LlvmBackend : IBackend
                 Environment.Exit(1);
                 return default!;
             }
+#endif
 
             case LayeCst.SizeOf _sizeof:
             {
@@ -998,7 +984,8 @@ internal sealed class LlvmBackend : IBackend
                     case SymbolType.SizedInteger:
                     {
                         if (targetValue.Type.IsNumeric())
-                            return new TypedLlvmValue(BuildIntCast(builder.Builder, targetValue.Value, GetLlvmType(typeCast.Type), ""), typeCast.Type);
+                            return builder.BuildIntToIntCast(targetValue, typeCast.Type);
+                            //return new TypedLlvmValue(BuildIntCast(builder.Builder, targetValue.Value, GetLlvmType(typeCast.Type), ""), typeCast.Type);
                     } break;
                 }
 

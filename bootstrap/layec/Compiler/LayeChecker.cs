@@ -551,6 +551,12 @@ internal sealed class LayeChecker
                 return new LayeCst.Return(returnStmt.SourceSpan, returnExpr);
             }
 
+            case LayeAst.Break breakStmt:
+            {
+                // TODO(local): check break/continue targets
+                return new LayeCst.Break(breakStmt.SourceSpan);
+            }
+
             case LayeAst.ExpressionStatement exprStmt:
             {
                 var expr = CheckExpression(exprStmt.Expression);
@@ -1014,13 +1020,13 @@ internal sealed class LayeChecker
                 }
 
                 var targetExpression = CheckExpression(cast.TargetExpression);
-                if (targetType is null)
+                if (targetExpression is null)
                 {
                     AssertHasErrors("checking cast expression");
                     return null;
                 }
 
-                return new LayeCst.Cast(cast.SourceSpan, targetType, targetExpression);
+                return new LayeCst.TypeCast(cast.SourceSpan, targetExpression, targetType);
             }
 
             case LayeAst.SizeOfExpression _sizeof:

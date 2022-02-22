@@ -20,14 +20,23 @@ string string_concat(string a, string b)
     return string_builder_to_string(builder);
 }
 
+string uint_to_string(uint v)
+{
+    string_builder builder;
+    string_builder_append_uint(&builder, v);
+    return string_builder_to_string(builder);
+}
+
 bool char_is_digit(i32 c)
 {
+    /* 0-9 */
     return c >= 48 and c < 58;
 }
 
 bool char_is_alpha(i32 c)
 {
-    return (c >= 65 and c <= 90) or (c >= 97 or c <= 122);
+    /* A-Z a-z */
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122);
 }
 
 bool char_is_white_space(i32 c)

@@ -78,7 +78,6 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class LogicalAnd(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class LogicalOr(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
 
-    public sealed record class Cast(SourceSpan SourceSpan, SymbolType TargetType, Expr TargetExpression) : Expr(SourceSpan, TargetType);
     public sealed record class SizeOf(SourceSpan SourceSpan, SymbolType TargetType) : Expr(SourceSpan, SymbolTypes.UInt);
     public sealed record class TypeCast(SourceSpan SourceSpan, Expr Expression, SymbolType TargetType) : Expr(SourceSpan, TargetType);
     public sealed record class SliceToString(Expr SliceExpression) : Expr(SliceExpression.SourceSpan, new SymbolType.String());
@@ -101,7 +100,6 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class While(Expr Condition, Stmt WhileBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, WhileBody, ElseBody));
     public sealed record class CFor(Stmt? Initializer, Expr? Condition, Stmt? Iterator, Stmt ForBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Initializer, Condition, Iterator, ForBody, ElseBody));
 
-
     public sealed record class BindingDeclaration(LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
         : Stmt(SourceSpan.Combine(new IHasSourceSpan?[] { BindingName, Expression }));
 
@@ -113,8 +111,8 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, LayeToken.Identifier FunctionName, Symbol.Function FunctionSymbol, Symbol.Binding[] ParameterSymbols, FunctionBody Body)
         : Stmt(FunctionName.SourceSpan);
 
-    public sealed record class Return(SourceSpan SourceSpan, Expr? ReturnValue)
-        : Stmt(SourceSpan);
+    public sealed record class Return(SourceSpan SourceSpan, Expr? ReturnValue) : Stmt(SourceSpan);
+    public sealed record class Break(SourceSpan SourceSpan) : Stmt(SourceSpan);
 
     #endregion
 }

@@ -34,23 +34,50 @@ string string_builder_to_string(string_builder sb)
 
 void string_builder_append_string(string_builder *sb, string v)
 {
-	uint sb_length = string_builder_length_get(*sb);
-	uint required_capacity = sb_length + v.length;
-	string_builder_ensure_capacity(sb, required_capacity);
+	uint sbLength = string_builder_length_get(*sb);
+	uint requiredCapacity = sbLength + v.length;
+	string_builder_ensure_capacity(sb, requiredCapacity);
 
 	uint i = 0;
 	while (i < v.length)
 	{
-		(*sb).data[sb_length + i] = v.data[i];
+		(*sb).data[sbLength + i] = v.data[i];
 		i = i + 1;
 	}
 
-	(*sb).length = required_capacity;
+	(*sb).length = requiredCapacity;
+}
+
+void string_builder_append_character(string_builder *sb, u8 c)
+{
+	uint sbLength = string_builder_length_get(*sb);
+	uint requiredCapacity = sbLength + 1;
+	string_builder_ensure_capacity(sb, requiredCapacity);
+
+	(*sb).data[sbLength] = c;
+	(*sb).length = requiredCapacity;
 }
 
 void string_builder_append_uint(string_builder *sb, uint v)
 {
+	uint sbLength = string_builder_length_get(*sb);
+	uint digitCount = uint_num_digits(v);
+	uint requiredCapacity = sbLength + digitCount;
+	string_builder_ensure_capacity(sb, requiredCapacity);
 
+	uint i = 0;
+	while (v > 0)
+	{
+		uint d = v % 10;
+		uint index = sbLength + digitCount - i - 1;
+		u8 c = cast(u8)(48 + d);
+		(*sb).data[index] = c;
+
+		v = v / 10;
+		i = i + 1;
+	}
+
+	(*sb).length = requiredCapacity;
 }
 
 /*

@@ -49,6 +49,7 @@ void laye_main(string[] args)
 {
     printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
 
+    /*
     {
         printf("invoked with the following arguments:%c", 10);
 
@@ -59,6 +60,7 @@ void laye_main(string[] args)
             i = i + 1;
         }
     }
+    */
 
     source sourceFile = source_create_from_file("./layec/src/main.ly");
     if (not sourceFile.isValid)
@@ -67,7 +69,7 @@ void laye_main(string[] args)
         return;
     }
     
-    printf("opened file successfully%c", 10);
+    //printf("opened file successfully%c", 10);
 
     //printf("%c%.*s%c", 10, sourceFile.text.length, sourceFile.text.data, 10);
 

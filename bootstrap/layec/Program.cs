@@ -4,6 +4,7 @@ using System.Diagnostics;
 
 using laye;
 using laye.Backends;
+using laye.Backends.C;
 using laye.Backends.Llvm;
 using laye.Compiler;
 
@@ -103,6 +104,7 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
 
     IBackend backend = args.Backend switch
     {
+        Backend.C => new CBackend(),
         Backend.Llvm => new LlvmBackend(),
         _ => throw new NotImplementedException(),
     };
@@ -200,8 +202,8 @@ sealed class ProgramArgs
     [CommandLine.Option("backend-output", Default = false, HelpText = "Shows output from backend processes.")]
     public bool ShowBackendOutput { get; set; } = false;
 
-    [CommandLine.Option("backend", Default = Backend.Llvm, HelpText = "The backend used to generate the output file.")]
-    public Backend Backend { get; set; } = Backend.Llvm;
+    [CommandLine.Option("backend", Default = Backend.C, HelpText = "The backend used to generate the output file.")]
+    public Backend Backend { get; set; } = Backend.C;
     [CommandLine.Option("target", Default = "", HelpText = "The target triple to compile for")]
     public string TargetTriple { get; set; } = "";
 

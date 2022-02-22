@@ -76,7 +76,6 @@ source_location lexer_current_location(lexer_data l)
 
 void lexer_advance(lexer_data *l)
 {
-	//printf(">>lexer_advance%c", 10);
 	if (lexer_is_eof(*l)) return;
 
 	i32 c = lexer_current_char(*l);
@@ -94,8 +93,7 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 {
 	laye_trivia_list triviaList;
 
-	bool shouldContinue = true;
-	while (not lexer_is_eof(*l) and shouldContinue)
+	while (not lexer_is_eof(*l))
 	{
 		laye_trivia trivia;
 		source_location startLocation = lexer_current_location(*l);
@@ -106,15 +104,13 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 		if (char_is_white_space(c))
 		{
 			//printf("here (in white space start)%c", 10);
-			bool shouldContinueWhiteSpace = true;
-			while (shouldContinueWhiteSpace and not lexer_is_eof(*l) and char_is_white_space(lexer_current_char(*l)))
+			while (not lexer_is_eof(*l) and char_is_white_space(lexer_current_char(*l)))
 			{
 				c = lexer_current_char(*l);
 				lexer_advance(l);
 
-				// TODO(local): implement break/continue
 				if (c == 10 and untilEndOfLine)
-					shouldContinueWhiteSpace = false;
+					break;
 			}
 
 			source_location endLocation = lexer_current_location(*l);
@@ -125,14 +121,12 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 		else if (c == 47 /* `/` */ and lexer_peek_char(*l) == 47 /* `/` */)
 		{
 			//printf("here (in line comment start)%c", 10);
-			bool shouldContinueLineComment = true;
-			while (not lexer_is_eof(*l) and shouldContinueLineComment)
+			while (not lexer_is_eof(*l))
 			{
 				c = lexer_current_char(*l);
 				lexer_advance(l);
 
-				// TODO(local): implement break/continue
-				if (c == 10) shouldContinueLineComment = false;
+				if (c == 10) break;
 			}
 
 			source_location endLocation = lexer_current_location(*l);
@@ -148,8 +142,7 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 
 			uint nesting = 1;
 
-			bool shouldContinueBlockComment = true;
-			while (not lexer_is_eof(*l) and shouldContinueBlockComment)
+			while (not lexer_is_eof(*l))
 			{
 				c = lexer_current_char(*l);
 				lexer_advance(l);
@@ -165,8 +158,7 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 					nesting = nesting - 1;
 
 					// TODO(local): implement break/continue
-					if (nesting == 0)
-						shouldContinueBlockComment = false;
+					if (nesting == 0) break;
 				}
 			}
 
@@ -179,20 +171,16 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 				printf("%.*s: error: unfinished block comment%c", locationString.length, locationString.data, 10);
 
 				trivia.isValid = false;
-				shouldContinue = false;
+				break;
 			}
 			else trivia.isValid = true;
 		}
-		else
-		{
-			//printf("shouldContinue = false;%c", 10);
-			shouldContinue = false;
-		}
+		else break;
 
-		if (trivia.isValid and shouldContinue)
+		if (trivia.isValid)
 			laye_trivia_list_append_trivia(&triviaList, trivia);
 		// TODO(local): implement break/continue
-		else shouldContinue = false;
+		else break;
 	}
 
 	return laye_trivia_list_get_trivia(triviaList);
@@ -320,20 +308,15 @@ void laye_token_list_append_token(laye_token_list *tokens, laye_token token)
 	// TODO(local): dynamic arrays
 	if ((*tokens).length == (*tokens).capacity)
 	{
-		printf("here 1%c", 10);
 		if ((*tokens).capacity == 0)
 		{
-			printf("here 2%c", 10);
 			(*tokens).capacity = 32;
 			(*tokens).buffer = malloc(32 * sizeof(laye_token));
-			printf("here 2%c", 10);
 		}
 		else
 		{
-			printf("here 3%c", 10);
 			(*tokens).capacity = (*tokens).capacity * 2;
 			(*tokens).buffer = realloc((*tokens).buffer, (*tokens).capacity * sizeof(laye_token));
-			printf("here 3%c", 10);
 		}
 	}
 
