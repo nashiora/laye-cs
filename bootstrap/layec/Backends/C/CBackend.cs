@@ -738,7 +738,9 @@ int main(int argc, char** argv) {{
         m_internalFunctionDecls.Append("  result.data = malloc(l_ * sizeof(");
         AppendCType(m_internalFunctionDecls, dynamicType.ElementType);
         m_internalFunctionDecls.AppendLine("));");
-        m_internalFunctionDecls.AppendLine("  memcpy(result.data, data + o_, l_);");
+        m_internalFunctionDecls.Append("  memcpy(result.data, data + o_, l_ * sizeof(");
+        AppendCType(m_internalFunctionDecls, dynamicType.ElementType);
+        m_internalFunctionDecls.AppendLine("));");
         m_internalFunctionDecls.AppendLine("  result.length = l_;");
         m_internalFunctionDecls.AppendLine("  return result;");
         m_internalFunctionDecls.AppendLine("}");

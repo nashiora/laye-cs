@@ -3,9 +3,45 @@ bool rune_is_laye_digit(i32 r)
 	return r < 127 and char_is_digit(cast(u8) r);
 }
 
+bool rune_is_laye_digit_in_radix(i32 r, uint radix)
+{
+	uint decimalDigitMax = radix - 1;
+	if (radix >= 10) decimalDigitMax = 9;
+
+	if (r >= 48 /* 0 */ and r <= (decimalDigitMax + 48 /* 0 */))
+		return true;
+
+	uint letterDigitMax = radix - 10 - 1;
+	if (r >= 65 /* A */ and r <= (letterDigitMax + 65 /* A */))
+		return true;
+
+	if (r >= 97 /* a */ and r <= (letterDigitMax + 97 /* a */))
+		return true;
+
+	return false;
+}
+
 uint rune_laye_digit_value(i32 r)
 {
 	return cast(uint) (r - 48 /* 0 */);
+}
+
+uint rune_laye_digit_value_in_radix(i32 r, uint radix)
+{
+	uint decimalDigitMax = radix - 1;
+	if (radix >= 10) decimalDigitMax = 9;
+
+	if (r >= 48 /* 0 */ and r <= (decimalDigitMax + 48 /* 0 */))
+		return cast(uint) (r - 48 /* 0 */);
+
+	uint letterDigitMax = radix - 10 - 1;
+	if (r >= 65 /* A */ and r <= (letterDigitMax + 65 /* A */))
+		return 10 + cast(uint) (r - 65 /* A */);
+
+	if (r >= 97 /* a */ and r <= (letterDigitMax + 97 /* a */))
+		return 10 + cast(uint) (r - 97 /* a */);
+
+	return 0;
 }
 
 bool rune_is_laye_identifier_part(i32 r)
@@ -36,7 +72,7 @@ i32 lexer_current_rune(lexer_data l)
 	return unicode_utf8_string_rune_at_index(l.currentSource.text, l.currentIndex);
 }
 
-i32 lexer_peek_char(lexer_data l)
+i32 lexer_peek_rune(lexer_data l)
 {
 	if (lexer_is_eof(l)) return 0;
 	uint currentByteCount = unicode_utf8_calc_encoded_byte_count(l.currentSource.text[l.currentIndex]);
@@ -98,7 +134,7 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 			trivia.kind = ::white_space;
 			trivia.sourceSpan = source_span_create(startLocation, endLocation);
 		}
-		else if (c == 47 /* `/` */ and lexer_peek_char(*l) == 47 /* `/` */)
+		else if (c == 47 /* `/` */ and lexer_peek_rune(*l) == 47 /* `/` */)
 		{
 			while (not lexer_is_eof(*l))
 			{
@@ -113,7 +149,7 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 			trivia.kind = ::comment_line;
 			trivia.sourceSpan = source_span_create(startLocation, endLocation);
 		}
-		else if (c == 47 /* `/` */ and lexer_peek_char(*l) == 42 /* `*` */)
+		else if (c == 47 /* `/` */ and lexer_peek_rune(*l) == 42 /* `*` */)
 		{
 			lexer_advance(l); // `/`
 			lexer_advance(l); // `*`
@@ -476,7 +512,53 @@ void lexer_read_laye_identifier_or_number(lexer_data *l, laye_token *token)
 
 void lexer_read_laye_radix_integer_from_delimiter(lexer_data *l, laye_token *token, source_location startLocation, u64 radix)
 {
+	panic("TODO(local): lexer_read_laye_radix_integer_from_delimiter is unimplemented");
+}
 
+i32 lexer_read_laye_escape_sequence_to_rune(lexer_data *l)
+{
+	source_location startLocation = lexer_current_location(*l);
+
+	assert(lexer_current_rune(*l) == 92 /* \ */, "lexer_read_laye_escape_to_rune called without escape char");
+	lexer_advance(l); // `\`
+
+	if (lexer_current_rune(*l) == 85 /* U */ and lexer_peek_rune(*l) == 43 /* + */)
+	{
+		lexer_advance(l); // `U`
+		lexer_advance(l); // `+`
+
+		i32 codepointValue = 0;
+
+		{
+			uint i = 0;
+			while (i < 4)
+			{
+				if (not rune_is_laye_digit_in_radix(lexer_current_rune(*l), 16))
+				{
+					diagnostics_add_error(l.diagnostics, source_span_create(startLocation, lexer_current_location(*l)), "expected 4 digits for unicode escape sequence");
+					break;
+				}
+
+				codepointValue = codepointValue * 16;
+				codepointValue = codepointValue + cast(i32) rune_laye_digit_value_in_radix(lexer_current_rune(*l), 16);
+
+				lexer_advance(l); // base 16 digit
+
+				i = i + 1;
+			}
+		}
+
+		return codepointValue;
+	}
+	else
+	{
+		i32 result = lexer_current_rune(*l);
+
+		lexer_advance(l); // next character, unrecognized
+		diagnostics_add_error(l.diagnostics, source_span_create(startLocation, lexer_current_location(*l)), "unrecognized escape sequence");
+
+		return result;
+	}
 }
 
 void lexer_read_laye_string(lexer_data *l, laye_token *token)
@@ -490,15 +572,25 @@ void lexer_read_laye_string(lexer_data *l, laye_token *token)
 	while (not lexer_is_eof(*l) and lexer_current_rune(*l) != 34 /* " */)
 	{
 		i32 c = lexer_current_rune(*l);
-		lexer_advance(l); // c
 
-		string_builder_append_rune(&sb, c);
+		if (c == 92 /* \ */)
+		{
+			i32 r = lexer_read_laye_escape_sequence_to_rune(l);
+			string_builder_append_rune(&sb, r);
+		}
+		else
+		{
+			lexer_advance(l); // c
+			string_builder_append_rune(&sb, c);	
+		}
 	}
 
 	if (lexer_current_rune(*l) == 34 /* " */)
 	{
 		lexer_advance(l); // `"`
-		token.kind = ::literal_string(string_builder_to_string(sb));
+		string stringValue = string_builder_to_string(sb);
+		token.kind = ::literal_string(stringValue);
+		printf(">> %.*s%c", stringValue.length, stringValue.data, 10);
 		string_builder_free(&sb);
 	}
 	else

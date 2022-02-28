@@ -87,7 +87,19 @@ enum laye_token_kind
 	literal_integer(u64 value),
 	literal_float(float value),
 	literal_character(i32 value),
-	literal_string(string value), 
+	literal_string(string value),
+
+	/*
+	 * TODO(local): figure out how to handle interpolated strings. below is an example of how I think I'd do C# style interpolation
+	 * If split up like this into completely separate tokens, the lexer needs to be able to return multiple tokens or access the token storage directly, so
+	 *   maybe instead a single literal_interpolated_string token with more additional sub-tokens inside would be easier? or a lexer state, like
+	 *   `normal`, `interpolated_string`, `interpolated_string_tokens` or smth to change token reading rules
+	 */
+	//interpolated_string_begin, /* start `$"` in `$"hello, {world}!"` */
+	//interpolated_string_literal, /* `hello, ` or `!` in `$"hello, {world}!"` */
+	//interpolated_string_expr_begin, /* `{` in `$"hello, {world}!"` */
+	//interpolated_string_expr_end, /* `}` in `$"hello, {world}!"` */
+	//interpolated_string_end, /* end `"` or `!` in `$"hello, {world}!"` */
 
 	/* delimiter tokens */
 	open_paren,
