@@ -22,6 +22,14 @@ rawptr nocontext default_allocator(uint size, rawptr memory)
 }
 */
 
+enum calling_convention_kind
+{
+    //nocontext,
+    //cdecl,
+    //stdcall,
+    //fastcall,
+}
+
 void panic(string message)
 {
     printf("%.*s%c", message.length, message.data, 10);

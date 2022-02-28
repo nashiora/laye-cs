@@ -11,13 +11,22 @@ uint string_builder_length_get(string_builder sb) { return sb.length; }
 uint string_builder_capacity_get(string_builder sb) { return sb.capacity; }
 u8 readonly[*] string_builder_data_get(string_builder sb) { return sb.data; }
 
+void string_builder_free(string_builder *sb)
+{
+	free(sb.data);
+
+	sb.length = 0;
+	sb.capacity = 0;
+	sb.data = nullptr;
+}
+
 void string_builder_ensure_capacity(string_builder *sb, uint desired_capacity)
 {
-	uint capacity = (*sb).capacity;
+	uint capacity = sb.capacity;
 	if (capacity < desired_capacity)
 	{
-		(*sb).capacity = desired_capacity;
-		(*sb).data = realloc((*sb).data, desired_capacity);
+		sb.capacity = desired_capacity;
+		sb.data = realloc(sb.data, desired_capacity);
 	}
 }
 
@@ -41,11 +50,11 @@ void string_builder_append_string(string_builder *sb, string v)
 	uint i = 0;
 	while (i < v.length)
 	{
-		(*sb).data[sbLength + i] = v.data[i];
+		sb.data[sbLength + i] = v.data[i];
 		i = i + 1;
 	}
 
-	(*sb).length = requiredCapacity;
+	sb.length = requiredCapacity;
 }
 
 void string_builder_append_character(string_builder *sb, u8 c)
@@ -54,8 +63,42 @@ void string_builder_append_character(string_builder *sb, u8 c)
 	uint requiredCapacity = sbLength + 1;
 	string_builder_ensure_capacity(sb, requiredCapacity);
 
-	(*sb).data[sbLength] = c;
-	(*sb).length = requiredCapacity;
+	sb.data[sbLength] = c;
+	sb.length = requiredCapacity;
+}
+
+void string_builder_append_rune(string_builder *sb, i32 c)
+{
+	uint runeByteCount = unicode_utf8_calc_rune_byte_count(c);
+
+	uint sbLength = string_builder_length_get(*sb);
+	uint requiredCapacity = sbLength + runeByteCount;
+	string_builder_ensure_capacity(sb, requiredCapacity);
+
+	if (runeByteCount == 1)
+	{
+		sb.data[sbLength + 0] = cast(u8) (c & 127 /* 16#7F */);
+	}
+	else if (runeByteCount == 2)
+	{
+		sb.data[sbLength + 0] = cast(u8) (192 /* 16#C0, 2#110 << 5 */ | (c >> 6 & 31 /* 16#1F, 2#0001_1111 */));
+		sb.data[sbLength + 1] = cast(u8) (128 /* 16#80,  2#10 << 6 */ | (c >> 0 & 63 /* 16#3F, 2#0011_1111 */));
+	}
+	else if (runeByteCount == 3)
+	{
+		sb.data[sbLength + 0] = cast(u8) (224 /* 16#E0, 2#1110 << 4 */ | (c >> 12 & 15 /* 16#0F, 2#0000_1111 */));
+		sb.data[sbLength + 1] = cast(u8) (128 /* 16#80,   2#10 << 6 */ | (c >>  6 & 63 /* 16#3F, 2#0011_1111 */));
+		sb.data[sbLength + 2] = cast(u8) (128 /* 16#80,   2#10 << 6 */ | (c >>  0 & 63 /* 16#3F, 2#0011_1111 */));
+	}
+	else if (runeByteCount == 4)
+	{
+		sb.data[sbLength + 0] = cast(u8) (240 /* 16#F0, 2#11110 << 3 */ | (c >> 18 &  7 /* 16#07, 2#0000_0111 */));
+		sb.data[sbLength + 1] = cast(u8) (128 /* 16#80,    2#10 << 6 */ | (c >> 12 & 63 /* 16#3F, 2#0011_1111 */));
+		sb.data[sbLength + 2] = cast(u8) (128 /* 16#80,    2#10 << 6 */ | (c >>  6 & 63 /* 16#3F, 2#0011_1111 */));
+		sb.data[sbLength + 3] = cast(u8) (128 /* 16#80,    2#10 << 6 */ | (c >>  0 & 63 /* 16#3F, 2#0011_1111 */));
+	}
+
+	sb.length = requiredCapacity;
 }
 
 void string_builder_append_uint(string_builder *sb, uint v)
@@ -71,13 +114,43 @@ void string_builder_append_uint(string_builder *sb, uint v)
 		uint d = v % 10;
 		uint index = sbLength + digitCount - i - 1;
 		u8 c = cast(u8)(48 + d);
-		(*sb).data[index] = c;
+		sb.data[index] = c;
 
 		v = v / 10;
 		i = i + 1;
 	}
 
-	(*sb).length = requiredCapacity;
+	sb.length = requiredCapacity;
+}
+
+void string_builder_append_uint_hexn(string_builder *sb, uint v, uint n)
+{
+	uint sbLength = string_builder_length_get(*sb);
+	uint requiredCapacity = sbLength + n;
+	string_builder_ensure_capacity(sb, requiredCapacity);
+
+	uint i = 0;
+	while (i < n)
+	{
+		uint d = v % 16;
+		uint index = sbLength + n - i - 1;
+
+		if (d < 10)
+		{
+			u8 c = cast(u8)(48 + d);
+			sb.data[index] = c;	
+		}
+		else
+		{
+			u8 c = cast(u8)(65 + d);
+			sb.data[index] = c;	
+		}
+
+		v = v / 16;
+		i = i + 1;
+	}
+
+	sb.length = requiredCapacity;
 }
 
 /*

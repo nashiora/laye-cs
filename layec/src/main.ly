@@ -47,7 +47,7 @@ void main(i32 argc, u8 readonly[*] readonly[*] argv)
 
 void laye_main(string[] args)
 {
-    printf("Laye stand-alone compiler%cVersion 0.1.0%c", 10, 10);
+    printf("Laye stand-alone compiler%cVersion 0.1.0%c%c", 10, 10, 10);
 
     /*
     {
@@ -62,28 +62,28 @@ void laye_main(string[] args)
     }
     */
 
-    source sourceFile = source_create_from_file("./layec/src/main.ly");
+    if (args.length < 2)
+    {
+        printf("error: no file given%c", 10);
+        return;
+    }
+
+    diagnostic_bag diagnostics;
+
+    string sourceFilePath = args[1];
+    source sourceFile = source_create_from_file(sourceFilePath);
     if (not sourceFile.isValid)
     {
         printf("failed to open file%c", 10);
         return;
     }
     
-    //printf("opened file successfully%c", 10);
+    laye_token[] sourceTokens = lexer_read_laye_tokens(sourceFile, &diagnostics);
 
-    //printf("%c%.*s%c", 10, sourceFile.text.length, sourceFile.text.data, 10);
-
-    laye_token_list sourceTokenList = lexer_read_laye_tokens(sourceFile);
-    if (not sourceTokenList.isValid)
-    {
-        printf("failed to read tokens from file%c", 10);
-        //return;
-    }
-
-    laye_token[] sourceTokens = laye_token_list_get_tokens(sourceTokenList);
-    
     printf("read %llu tokens from file successfully%c", sourceTokens.length, 10);
+    diagnostics_print(diagnostics);
 
+    if (false)
     {
         uint i = 0;
         while (i < sourceTokens.length)
@@ -92,36 +92,36 @@ void laye_main(string[] args)
 
             string tokenLocationString = source_location_to_string(token.sourceSpan.startLocation);
             string tokenString = source_span_to_string(token.sourceSpan);
+            string tokenKindString = nameof_variant(token.kind);
 
-            printf("> token (");
-            printf("%.*s", tokenLocationString.length, tokenLocationString.data);
-            printf(")%c", 10);
+            printf("> token %.*s (%.*s) %.*s%c", tokenKindString.length, tokenKindString.data,
+                tokenLocationString.length, tokenLocationString.data,
+                tokenString.length, tokenString.data,
+                10);
 
-            printf("  `%.*s`%c", tokenString.length, tokenString.data, 10);
+            i = i + 1;
+        }
+    }
+}
 
-            {
-                printf("    leading trivia%c", 10);
-                uint j = 0;
-                while (j < token.leadingTrivia.length)
-                {
-                    laye_trivia trivia = token.leadingTrivia[j];
-                    string triviaString = source_span_to_string(trivia.sourceSpan);
-                    printf("    `%.*s`%c", triviaString.length, triviaString.data, 10);
-                    j = j + 1;
-                }
-            }
+void diagnostics_print(diagnostic_bag b)
+{
+    uint count = b.diagnostics.length;
 
-            {
-                printf("    trailing trivia%c", 10);
-                uint j = 0;
-                while (j < token.trailingTrivia.length)
-                {
-                    laye_trivia trivia = token.trailingTrivia[j];
-                    string triviaString = source_span_to_string(trivia.sourceSpan);
-                    printf("    `%.*s`%c", triviaString.length, triviaString.data, 10);
-                    j = j + 1;
-                }
-            }
+    {
+        uint i = 0;
+        while (i < count)
+        {
+            diagnostic d = b.diagnostics[i];
+
+            string locationString = source_location_to_string(d.sourceSpan.startLocation);
+            string kindString = nameof_variant(d.kind);
+
+            printf("%.*s: %.*s: %.*s%c",
+                locationString.length, locationString.data,
+                kindString.length, kindString.data,
+                d.message.length, d.message.data,
+                10);
 
             i = i + 1;
         }

@@ -69,6 +69,7 @@ internal sealed class CBackend : IBackend
         m_typedefs.AppendLine("typedef int64_t ly_bool64_t;");
         m_typedefs.AppendLine("typedef intptr_t ly_int_t;");
         m_typedefs.AppendLine("typedef uintptr_t ly_uint_t;");
+        m_typedefs.AppendLine("typedef struct { void* data; ly_uint_t count; ly_uint_t capacity; } ly_dynamic_t;");
 
         m_prototypes.AppendLine("ly_string ly_internal_substring(ly_string s_, ly_uint_t o_, ly_uint_t l_);");
         m_prototypes.AppendLine($"ly_string ly_internal_slicetostring({u8SliceTypeName} s_);");
@@ -88,6 +89,17 @@ internal sealed class CBackend : IBackend
     memcpy(result.data, s_.data, s_.length);
     result.length = s_.length;
     return result;
+}}");
+
+        m_internalFunctionDecls.AppendLine(@$"void ly_internal_dynamic_ensure_capacity(ly_dynamic_t* d_, ly_uint_t reqiredCapacity)
+{{
+	ly_uint_t capacity = d_->capacity;
+	if (capacity < reqiredCapacity)
+	{{
+        ly_uint_t desiredCapacity = capacity == 0 ? reqiredCapacity * 2 : capacity * 2;
+        d_->capacity = desiredCapacity;
+		d_->data = realloc(d_->data, desiredCapacity);
+	}}
 }}");
 
         foreach (var root in roots)
@@ -330,6 +342,8 @@ int main(int argc, char** argv) {{
                 builder.Append("_t");
             } break;
 
+            case SymbolType.Float _f: builder.Append("double"); break;
+
             case SymbolType.String: builder.Append(m_cTypeNames[SymbolTypes.String]); break;
 
             case SymbolType.RawPtr: builder.Append("void*"); break;
@@ -358,12 +372,30 @@ int main(int argc, char** argv) {{
                 builder.Append(m_cTypeNames[sliceType]);
             } break;
 
+            case SymbolType.Dynamic: builder.Append("ly_dynamic_t"); break;
+
             case SymbolType.Struct structType:
             {
                 if (!m_cTypeNames.ContainsKey(structType))
                     GenerateCType(structType);
 
                 builder.Append(m_cTypeNames[structType]);
+            } break;
+
+            case SymbolType.Enum enumType:
+            {
+                if (!m_cTypeNames.ContainsKey(enumType))
+                    GenerateCType(enumType);
+
+                builder.Append(m_cTypeNames[enumType]);
+            } break;
+
+            case SymbolType.Union unionType:
+            {
+                if (!m_cTypeNames.ContainsKey(unionType))
+                    GenerateCType(unionType);
+
+                builder.Append(m_cTypeNames[unionType]);
             } break;
 
             default:
@@ -444,6 +476,169 @@ int main(int argc, char** argv) {{
                 m_cTypeNames[structType] = structName;
             } break;
 
+            case SymbolType.Enum enumType:
+            {
+                var enumBuilder = new StringBuilder();
+
+                string enumName = $"ly_{enumType.Name}";
+                m_typedefs.AppendLine($"typedef enum {enumName} {enumName};");
+
+                enumBuilder.AppendLine($"enum {enumName} {{");
+                if (enumType.Variants.Length == 0)
+                    enumBuilder.AppendLine($"  {enumName}__Dummy,");
+                else
+                {
+                    for (int i = 0; i < enumType.Variants.Length; i++)
+                    {
+                        var (variantName, variantValue) = enumType.Variants[i];
+                        enumBuilder.Append("  ");
+                        enumBuilder.Append(enumName);
+                        enumBuilder.Append("__");
+                        enumBuilder.Append(variantName);
+                        enumBuilder.Append(" = ");
+                        enumBuilder.Append(variantValue);
+                        enumBuilder.AppendLine(",");
+                    }
+                }
+
+                enumBuilder.AppendLine("};");
+                m_typeDecls.AppendLine(enumBuilder.ToString());
+
+                m_cTypeNames[enumType] = enumName;
+
+                enumBuilder.Clear();
+
+                enumBuilder.Append("static ");
+                AppendCType(enumBuilder, SymbolTypes.String);
+                enumBuilder.Append(" ly_enum_to_string__");
+                enumBuilder.Append(enumName);
+                enumBuilder.AppendLine("(int enumValue) {");
+                enumBuilder.AppendLine("    switch (enumValue) {");
+                for (int i = 0; i < enumType.Variants.Length; i++)
+                {
+                    var (variantName, variantValue) = enumType.Variants[i];
+                    enumBuilder.Append("    case ");
+                    enumBuilder.Append(enumName);
+                    enumBuilder.Append("__");
+                    enumBuilder.Append(variantName);
+                    enumBuilder.Append(": return LYSTR_STRING(\"");
+                    enumBuilder.Append(variantName);
+                    enumBuilder.Append("\", ");
+                    enumBuilder.Append(Encoding.UTF8.GetByteCount(variantName));
+                    enumBuilder.Append(')');
+                    enumBuilder.AppendLine(";");
+                }
+
+                enumBuilder.AppendLine("    default: return LYSTR_STRING(\"<invalid>\", 9); ");
+                enumBuilder.AppendLine("    }");
+                enumBuilder.AppendLine("}");
+
+                m_internalFunctionDecls.AppendLine(enumBuilder.ToString());
+            } break;
+
+            case SymbolType.Union unionType:
+            {
+                var unionBuilder = new StringBuilder();
+                var unionEnumBuilder = new StringBuilder();
+
+                string unionName = $"ly_{unionType.Name}";
+                string unionEnumName = $"ly_{unionType.Name}_Kinds";
+                m_typedefs.AppendLine($"typedef struct {unionName} {unionName};");
+                //m_typedefs.AppendLine($"typedef enum {unionEnumName} {unionEnumName};");
+
+                //
+
+                unionEnumBuilder.AppendLine($"enum {unionEnumName} {{");
+                if (unionType.Variants.Length == 0)
+                    unionEnumBuilder.AppendLine($"  {unionEnumName}__Dummy = 1,");
+                else
+                {
+                    for (int i = 0; i < unionType.Variants.Length; i++)
+                    {
+                        var variant = unionType.Variants[i];
+                        unionEnumBuilder.Append("  ");
+                        unionEnumBuilder.Append(unionEnumName);
+                        unionEnumBuilder.Append("__");
+                        unionEnumBuilder.Append(variant.Name);
+                        if (i == 0)
+                            unionEnumBuilder.Append(" = 1");
+                        unionEnumBuilder.AppendLine(",");
+                    }
+                }
+
+                unionEnumBuilder.AppendLine("};");
+                m_typeDecls.AppendLine(unionEnumBuilder.ToString());
+
+                //
+
+                unionBuilder.AppendLine($"struct {unionName} {{");
+                unionBuilder.AppendLine("  int kind;");
+                unionBuilder.AppendLine("  union {");
+                if (unionType.Variants.Length == 0)
+                    unionBuilder.AppendLine($"    int dummy;");
+                else
+                {
+                    for (int i = 0; i < unionType.Variants.Length; i++)
+                    {
+                        var variant = unionType.Variants[i];
+                        if (variant.Fields.Length == 0) continue;
+                        unionBuilder.AppendLine("    struct {");
+                        for (int j = 0; j < variant.Fields.Length; j++)
+                        {
+                            var field = variant.Fields[j];
+                            unionBuilder.Append("      ");
+                            AppendCType(unionBuilder, field.Type);
+                            //unionBuilder.Append(" ly_");
+                            unionBuilder.Append(' ');
+                            unionBuilder.Append(field.Name);
+                            unionBuilder.AppendLine(";");
+                        }
+
+                        unionBuilder.Append("    } ");
+                        unionBuilder.Append(variant.Name);
+                        unionBuilder.AppendLine(";");
+                    }
+                }
+
+                unionBuilder.AppendLine("  } variants;");
+                unionBuilder.AppendLine("};");
+                m_typeDecls.AppendLine(unionBuilder.ToString());
+
+                m_cTypeNames[unionType] = unionName;
+
+                //*
+                unionBuilder.Clear();
+
+                unionBuilder.Append("static ");
+                AppendCType(unionBuilder, SymbolTypes.String);
+                unionBuilder.Append(" ly_union_tag_to_string__");
+                unionBuilder.Append(unionName);
+                unionBuilder.AppendLine("(int enumValue) {");
+                unionBuilder.AppendLine("    switch (enumValue) {");
+                unionBuilder.AppendLine("    case 0: return LYSTR_STRING(\"nil\", 3);");
+                for (int i = 0; i < unionType.Variants.Length; i++)
+                {
+                    var (variantName, variantValue) = unionType.Variants[i];
+                    unionBuilder.Append("    case ");
+                    unionBuilder.Append(unionEnumName);
+                    unionBuilder.Append("__");
+                    unionBuilder.Append(variantName);
+                    unionBuilder.Append(": return LYSTR_STRING(\"");
+                    unionBuilder.Append(variantName);
+                    unionBuilder.Append("\", ");
+                    unionBuilder.Append(Encoding.UTF8.GetByteCount(variantName));
+                    unionBuilder.Append(')');
+                    unionBuilder.AppendLine(";");
+                }
+
+                unionBuilder.AppendLine("    default: return LYSTR_STRING(\"<invalid>\", 9); ");
+                unionBuilder.AppendLine("    }");
+                unionBuilder.AppendLine("}");
+
+                m_internalFunctionDecls.AppendLine(unionBuilder.ToString());
+                //*/
+            } break;
+
             default:
             {
                 Console.WriteLine($"internal compiler error: attempt to generate type {type}");
@@ -510,6 +705,45 @@ int main(int argc, char** argv) {{
         m_internalFunctionDecls.AppendLine("}");
 
         m_sliceOperationFunctionNames[sliceType] = functionName;
+    }
+
+    // TODO(local): the read/write nature of container types means slicing a container may generate a struct type identical but incompatible with another identical slice type ...
+    // container type generation should be figured out a bit better
+    private void GenerateDynamicSliceFunction(SymbolType.Dynamic dynamicType)
+    {
+        if (m_sliceOperationFunctionNames.ContainsKey(dynamicType)) return;
+
+        string functionName = $"ly_internal_dynamicslice_{m_uniqueIndexCounter++}";
+
+        var sliceType = new SymbolType.Slice(dynamicType.ElementType, dynamicType.Access);
+
+        AppendCType(m_prototypes, sliceType);
+        m_prototypes.Append($" {functionName}(");
+        AppendCType(m_prototypes, dynamicType);
+        m_prototypes.AppendLine(" d_, ly_uint_t o_, ly_uint_t l_);");
+
+        AppendCType(m_internalFunctionDecls, sliceType);
+        m_internalFunctionDecls.Append($" {functionName}(");
+        AppendCType(m_internalFunctionDecls, dynamicType);
+        m_internalFunctionDecls.AppendLine(" d_, ly_uint_t o_, ly_uint_t l_)");
+        m_internalFunctionDecls.AppendLine("{");
+        m_internalFunctionDecls.Append("  ");
+        AppendCType(m_internalFunctionDecls, sliceType);
+        m_internalFunctionDecls.AppendLine(" result;");
+        m_internalFunctionDecls.Append("  ");
+        AppendCType(m_internalFunctionDecls, dynamicType.ElementType);
+        m_internalFunctionDecls.Append("* data = (");
+        AppendCType(m_internalFunctionDecls, dynamicType.ElementType);
+        m_internalFunctionDecls.AppendLine("*)d_.data;");
+        m_internalFunctionDecls.Append("  result.data = malloc(l_ * sizeof(");
+        AppendCType(m_internalFunctionDecls, dynamicType.ElementType);
+        m_internalFunctionDecls.AppendLine("));");
+        m_internalFunctionDecls.AppendLine("  memcpy(result.data, data + o_, l_);");
+        m_internalFunctionDecls.AppendLine("  result.length = l_;");
+        m_internalFunctionDecls.AppendLine("  return result;");
+        m_internalFunctionDecls.AppendLine("}");
+
+        m_sliceOperationFunctionNames[dynamicType] = functionName;
     }
 
     private void AppendSymbolName(StringBuilder builder, Symbol symbol)
@@ -616,6 +850,41 @@ int main(int argc, char** argv) {{
                 builder.Append(" = ");
                 CompileExpression(builder, assignStmt.ValueExpression);
                 builder.AppendLine(";");
+            } break;
+
+            case LayeCst.DynamicAppend dynAppendStmt:
+            {
+                string tempName = $"ly_dyn_{m_uniqueIndexCounter++}";
+
+                builder.Append("ly_dynamic_t* ");
+                builder.Append(tempName);
+                builder.Append(" = &(");
+                CompileExpression(builder, dynAppendStmt.TargetExpression);
+                builder.AppendLine(");");
+
+                AppendTabs(builder);
+                builder.Append("ly_internal_dynamic_ensure_capacity(");
+                builder.Append(tempName);
+                builder.Append(", (");
+                builder.Append(tempName);
+                builder.Append("->count + 1) * sizeof(");
+                AppendCType(builder, dynAppendStmt.ValueExpression.Type); // if type checking succeeded, this type is the same as the container element type
+                builder.AppendLine("));");
+
+                AppendTabs(builder);
+                builder.Append("(/*cast*/(");
+                AppendCType(builder, dynAppendStmt.ValueExpression.Type);
+                builder.Append("*) (");
+                builder.Append(tempName);
+                builder.Append("->data))[");
+                builder.Append(tempName);
+                builder.Append("->count] = (");
+                CompileExpression(builder, dynAppendStmt.ValueExpression);
+                builder.AppendLine(");");
+
+                AppendTabs(builder);
+                builder.Append(tempName);
+                builder.AppendLine("->count++;");
             } break;
 
             case LayeCst.Block blockStmt:
@@ -774,6 +1043,51 @@ int main(int argc, char** argv) {{
 
             case LayeCst.LoadValue loadExpr: AppendSymbolName(builder, loadExpr.Symbol); break;
 
+            case LayeCst.LoadEnumVariant loadEnumVariantExpr:
+            {
+                AppendCType(builder, loadEnumVariantExpr.EnumSymbol.Type!);
+                builder.Append("__");
+                builder.Append(loadEnumVariantExpr.VariantName);
+            } break;
+
+            case LayeCst.LoadUnionVariant loadUnionVariantExpr:
+            {
+                var unionSymbol = loadUnionVariantExpr.UnionSymbol;
+                //string variantKindName = $"{m_cTypeNames[unionSymbol.Type!]}_Kinds";
+                string unionTypeName = m_cTypeNames[unionSymbol.Type!];
+                string variantKindName = $"{unionTypeName}_Kinds__{loadUnionVariantExpr.Variant.Name}";
+
+                builder.Append('(');
+                // AppendCType(builder, unionSymbol.Type!);
+                builder.Append(unionTypeName);
+                builder.Append("){.kind = ");
+                builder.Append(variantKindName);
+                for (int i = 0; i < loadUnionVariantExpr.Arguments.Length; i++)
+                {
+                    var arg = loadUnionVariantExpr.Arguments[i];
+
+                    builder.Append(", .variants.");
+                    builder.Append(loadUnionVariantExpr.Variant.Name);
+                    builder.Append('.');
+                    builder.Append(loadUnionVariantExpr.Variant.Fields[i].Name);
+                    builder.Append(" = ");
+                    CompileExpression(builder, arg);
+                }
+
+                builder.Append('}');
+            } break;
+
+            case LayeCst.LoadUnionNilVariant loadUnionVariantExpr2:
+            {
+                var unionSymbol = loadUnionVariantExpr2.UnionSymbol;
+                string unionTypeName = m_cTypeNames[unionSymbol.Type!];
+
+                builder.Append('(');
+                // AppendCType(builder, unionSymbol.Type!);
+                builder.Append(unionTypeName);
+                builder.Append("){.kind = 0}");
+            } break;
+
             case LayeCst.SliceLengthLookup sliceLengthExpr:
             {
                 builder.Append('(');
@@ -795,23 +1109,46 @@ int main(int argc, char** argv) {{
                 builder.Append(").data");
             } break;
 
+            case LayeCst.DynamicLengthLookup dynlenExpr:
+            {
+                builder.Append('(');
+                CompileExpression(builder, dynlenExpr.TargetExpression);
+                builder.Append(").count");
+            }
+            break;
+
             case LayeCst.DynamicIndex dynExpr:
             {
                 Debug.Assert(dynExpr.Arguments.Length == 1);
 
-                builder.Append('(');
-                CompileExpression(builder, dynExpr.TargetExpression);
-                builder.Append(')');
-
-                switch (dynExpr.TargetExpression.Type)
+                if (dynExpr.TargetExpression.Type is SymbolType.Dynamic dynamicType)
                 {
-                    case SymbolType.String stringTarget: builder.Append(".data"); break;
-                    case SymbolType.Slice sliceTarget: builder.Append(".data"); break;
-                }
+                    builder.Append("(/*cast*/(");
+                    AppendCType(builder, dynamicType.ElementType);
+                    builder.Append("*) (");
+                    CompileExpression(builder, dynExpr.TargetExpression);
+                    builder.Append(").data)");
 
-                builder.Append('[');
-                CompileExpression(builder, dynExpr.Arguments[0]);
-                builder.Append(']');
+                    builder.Append("[");
+                    CompileExpression(builder, dynExpr.Arguments[0]);
+                    builder.Append("]");
+                }
+                else
+                {
+                    builder.Append('(');
+                    CompileExpression(builder, dynExpr.TargetExpression);
+                    builder.Append(')');
+
+                    switch (dynExpr.TargetExpression.Type)
+                    {
+                        case SymbolType.String stringTarget: builder.Append(".data"); break;
+                        case SymbolType.Slice sliceTarget: builder.Append(".data"); break;
+                    }
+
+                    builder.Append('[');
+                    CompileExpression(builder, dynExpr.Arguments[0]);
+                    builder.Append(']');
+                }
             } break;
 
             case LayeCst.NamedIndex namedExpr:
@@ -827,6 +1164,34 @@ int main(int argc, char** argv) {{
             {
                 builder.Append("sizeof(");
                 AppendCType(builder, sizeofExpr.TargetType);
+                builder.Append(')');
+            } break;
+
+            case LayeCst.NameOfEnumVariant nameofEnumExpr:
+            {
+                builder.Append("ly_enum_to_string__");
+                AppendCType(builder, nameofEnumExpr.EnumType);
+                builder.Append('(');
+                CompileExpression(builder, nameofEnumExpr.EnumValueExpression);
+                builder.Append(')');
+            } break;
+
+            case LayeCst.NameOfUnionVariant nameofUnionExpr:
+            {
+                builder.Append("LYSTR_STRING(\"");
+                builder.Append(nameofUnionExpr.VariantType.Name);
+                builder.Append("\", ");
+                builder.Append(Encoding.UTF8.GetByteCount(nameofUnionExpr.VariantType.Name));
+                builder.Append(')');
+            } break;
+
+            case LayeCst.NameOfUnionVariantExpression nameofUnionExpr2:
+            {
+                builder.Append("ly_union_tag_to_string__");
+                AppendCType(builder, nameofUnionExpr2.UnionType);
+                builder.Append("((");
+                CompileExpression(builder, nameofUnionExpr2.VariantExpression);
+                builder.Append(").kind");
                 builder.Append(')');
             } break;
 
@@ -887,12 +1252,24 @@ int main(int argc, char** argv) {{
             case LayeCst.CompareGreater greaterExpr: AppendBinary(greaterExpr.LeftExpression, greaterExpr.RightExpression, ">"); break;
             case LayeCst.CompareGreaterEqual greaterEqExpr: AppendBinary(greaterEqExpr.LeftExpression, greaterEqExpr.RightExpression, ">="); break;
 
+            case LayeCst.CompareUnionToNil compareUnionToNilExpr:
+            {
+                builder.Append('(');
+                CompileExpression(builder, compareUnionToNilExpr.Expression);
+                builder.Append(").kind == 0");
+            } break;
+
             case LayeCst.TypeCast castExpr:
             {
                 builder.Append('(');
                 AppendCType(builder, castExpr.Type);
                 builder.Append(')');
                 CompileExpression(builder, castExpr.Expression);
+            } break;
+
+            case LayeCst.UnionVariantDowncast unionVariantDowncastExpr:
+            {
+                CompileExpression(builder, unionVariantDowncastExpr.Expression);
             } break;
 
             case LayeCst.SliceToString sliceToStringExpr:
@@ -980,6 +1357,24 @@ int main(int argc, char** argv) {{
                             }
                         }
 
+                        builder.Append(')');
+                    } break;
+
+                    case SymbolType.Dynamic dynamicType:
+                    {
+                        GenerateDynamicSliceFunction(dynamicType);
+                        string bufferSliceFunctionName = m_sliceOperationFunctionNames[dynamicType];
+
+                        builder.Append(bufferSliceFunctionName);
+                        builder.Append('(');
+                        CompileExpression(builder, sliceExpr.TargetExpression);
+                        builder.Append(", ");
+                        if (sliceExpr.OffsetExpression is not null)
+                            CompileExpression(builder, sliceExpr.OffsetExpression);
+                        else builder.Append('0');
+                        builder.Append(", ");
+                        Debug.Assert(sliceExpr.CountExpression is not null);
+                        CompileExpression(builder, sliceExpr.CountExpression!);
                         builder.Append(')');
                     } break;
                 }

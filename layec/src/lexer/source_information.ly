@@ -1,3 +1,4 @@
+// NOTE(local): I may move this over to data.ly in the root driectory bc it's all shared, not just lexer specific
 
 struct source
 {
@@ -81,7 +82,9 @@ string source_location_to_string(source_location sl)
 	string_builder_append_string(&sb, ":");
 	string_builder_append_uint(&sb, source_location_column_get(sl));
 
-	return string_builder_to_string(sb);
+	string result = string_builder_to_string(sb);
+	string_builder_free(&sb);
+	return result;
 }
 
 source_span source_span_create(source_location start, source_location end)

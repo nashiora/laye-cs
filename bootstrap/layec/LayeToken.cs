@@ -150,7 +150,11 @@ internal enum Keyword
 
     Cast,
     SizeOf,
+    NameOf,
+    NameOf_Variant,
     OffsetOf,
+
+    Dynamic_Append,
 
     #endregion
 

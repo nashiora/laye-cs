@@ -9,6 +9,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     #region Shared Data
 
     public sealed record class ParamData(SourceSpan SourceSpan, Symbol Symbol, Expr? DefaultValue) : LayeCst(SourceSpan);
+    //public sealed record class VariantData(SourceSpan SourceSpan, Symbol Symbol, ParamData[] VariantFields) : LayeAst(SourceSpan);
 
     #endregion
 
@@ -32,8 +33,12 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Bool(LayeToken.Keyword Literal, SymbolType Type) : Expr(Literal.SourceSpan, Type);
     public sealed record class String(LayeToken.String Literal, SymbolType Type) : Expr(Literal.SourceSpan, Type);
     public sealed record class NullPtr(LayeToken.Keyword Literal, SymbolType Type, SymbolType ElementType) : Expr(Literal.SourceSpan, Type);
+    public sealed record class Nil(LayeToken.Keyword Literal, SymbolType Type) : Expr(Literal.SourceSpan, Type);
 
     public sealed record class LoadValue(SourceSpan SourceSpan, Symbol Symbol) : Expr(SourceSpan, Symbol.Type!);
+    public sealed record class LoadEnumVariant(SourceSpan SourceSpan, Symbol.Enum EnumSymbol, string VariantName, ulong VariantValue) : Expr(SourceSpan, EnumSymbol.Type!);
+    public sealed record class LoadUnionVariant(SourceSpan SourceSpan, Symbol.Union UnionSymbol, SymbolType.UnionVariant Variant, Expr[] Arguments) : Expr(SourceSpan, Variant);
+    public sealed record class LoadUnionNilVariant(SourceSpan SourceSpan, Symbol.Union UnionSymbol) : Expr(SourceSpan, UnionSymbol.Type!);
     public sealed record class NamedIndex(Expr TargetExpression, LayeToken.Identifier Name, SymbolType FieldType)
         : Expr(SourceSpan.Combine(TargetExpression, Name), FieldType);
     public sealed record class StringLengthLookup(SourceSpan SourceSpan, Expr TargetExpression)
@@ -41,6 +46,8 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class StringDataLookup(SourceSpan SourceSpan, Expr TargetExpression)
         : Expr(SourceSpan, new SymbolType.Buffer(new SymbolType.SizedInteger(false, 8), AccessKind.ReadOnly));
     public sealed record class SliceLengthLookup(SourceSpan SourceSpan, Expr TargetExpression)
+        : Expr(SourceSpan, new SymbolType.Integer(false));
+    public sealed record class DynamicLengthLookup(SourceSpan SourceSpan, Expr TargetExpression)
         : Expr(SourceSpan, new SymbolType.Integer(false));
 
     public sealed record class DynamicIndex(SourceSpan SourceSpan, Expr TargetExpression, Expr[] Arguments, SymbolType Type)
@@ -78,9 +85,15 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class LogicalAnd(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
     public sealed record class LogicalOr(Expr LeftExpression, Expr RightExpression) : Expr(SourceSpan.Combine(LeftExpression, RightExpression), LeftExpression.Type);
 
+    public sealed record class CompareUnionToNil(SourceSpan SourceSpan, Expr Expression) : Expr(SourceSpan, SymbolTypes.Bool);
+
     public sealed record class SizeOf(SourceSpan SourceSpan, SymbolType TargetType) : Expr(SourceSpan, SymbolTypes.UInt);
+    public sealed record class NameOfEnumVariant(SourceSpan SourceSpan, SymbolType.Enum EnumType, Expr EnumValueExpression) : Expr(SourceSpan, SymbolTypes.String);
+    public sealed record class NameOfUnionVariant(SourceSpan SourceSpan, SymbolType.UnionVariant VariantType) : Expr(SourceSpan, SymbolTypes.String);
+    public sealed record class NameOfUnionVariantExpression(SourceSpan SourceSpan, SymbolType.Union UnionType, Expr VariantExpression) : Expr(SourceSpan, SymbolTypes.String);
     public sealed record class TypeCast(SourceSpan SourceSpan, Expr Expression, SymbolType TargetType) : Expr(SourceSpan, TargetType);
     public sealed record class SliceToString(Expr SliceExpression) : Expr(SliceExpression.SourceSpan, new SymbolType.String());
+    public sealed record class UnionVariantDowncast(Expr Expression, SymbolType.Union TargetType) : Expr(Expression.SourceSpan, TargetType);
 
     public sealed record class InvokeFunction(SourceSpan SourceSpan, Symbol.Function TargetFunctionSymbol, Expr[] Arguments) : Expr(SourceSpan, TargetFunctionSymbol.Type!.ReturnType);
 
@@ -92,6 +105,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class ExpressionStatement(Expr Expression) : Stmt(Expression.SourceSpan);
     public sealed record class Assignment(Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan.Combine(TargetExpression, ValueExpression));
+    public sealed record class DynamicAppend(SourceSpan SourceSpan, Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan);
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
     public sealed record class DeadCode(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);

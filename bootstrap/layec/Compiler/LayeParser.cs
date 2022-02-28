@@ -1,4 +1,4 @@
-#define ALLOW_NAMESPACING
+//#define ALLOW_TYPE_NAMESPACING
 
 using System.Diagnostics;
 
@@ -282,24 +282,28 @@ internal sealed class LayeParser
         LayeAst.Type? type = null;
         if (CheckKeyword(Keyword.SizedInt, out var sizedIntKw))
         {
+#if false
             if (sizedIntKw.SizeData != 8 && sizedIntKw.SizeData != 32 && sizedIntKw.SizeData != 64)
             {
                 if (isRequired)
                     m_diagnostics.Add(new Diagnostic.Error(sizedIntKw.SourceSpan, "most sized signed integer types are currently not supported"));
                 return null;
             }
+#endif
             
             type = new LayeAst.BuiltInType(sizedIntKw);
             Advance();
         }
         else if (CheckKeyword(Keyword.SizedUInt, out var sizedUIntKw))
         {
+#if false
             if (sizedUIntKw.SizeData != 8 && sizedUIntKw.SizeData != 32 && sizedUIntKw.SizeData != 64)
             {
                 if (isRequired)
                     m_diagnostics.Add(new Diagnostic.Error(sizedIntKw.SourceSpan, "most sized unsigned integer types are currently not supported"));
                 return null;
             }
+#endif
 
             type = new LayeAst.BuiltInType(sizedUIntKw);
             Advance();
@@ -360,7 +364,7 @@ internal sealed class LayeParser
             LayeAst.PathPart pathPart = new LayeAst.NamePathPart(nameLookupId);
             Advance();
 
-#if ALLOW_NAMESPACING
+#if ALLOW_TYPE_NAMESPACING
             if (CheckDelimiter(Delimiter.PathSeparator, out _))
             {
                 while (CheckDelimiter(Delimiter.PathSeparator, out var pathSep))
@@ -375,7 +379,7 @@ internal sealed class LayeParser
                         return null;
                     }
 
-                    pathPart = new LayeAst.JoinedPath(pathPart, pathSep, new LayeAst.NamePathPart(nextNameId));
+                    pathPart = new LayeAst.JoinedPath(pathPart, new LayeAst.NamePathPart(nextNameId));
                 }
             }
 #endif
@@ -496,6 +500,21 @@ internal sealed class LayeParser
 
                         return new LayeAst.BufferType(type, modifiers, openBracketDelim, starOp2, closeBracketDelim2);
                     }
+                    else if (CheckKeyword(Keyword.Dynamic, out var dynKw))
+                    {
+                        Advance(); // `dynamic`
+
+                        if (!ExpectDelimiter(Delimiter.CloseBracket, out var closeBracketDelim2))
+                        {
+                            if (isRequired)
+                                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `]` to close dynamic type"));
+
+                            m_tokenIndex = tokenIndex;
+                            return null;
+                        }
+
+                        return new LayeAst.DynamicType(type, modifiers, openBracketDelim, dynKw, closeBracketDelim2);
+                    }
                 }
 
                 if (isRequired)
@@ -556,7 +575,7 @@ internal sealed class LayeParser
         return type;
     }
 
-    #endregion
+#endregion
 
 #if false
     private LayeAstHeaderInfo? ReadHeaderInfo()
@@ -608,6 +627,8 @@ internal sealed class LayeParser
     {
         if (CheckKeyword(Keyword.Struct))
             return ReadStructDeclaration();
+        else if (CheckKeyword(Keyword.Enum))
+            return ReadEnumDeclaration();
 
         return ReadFunctionDeclaration();
 
@@ -668,6 +689,93 @@ internal sealed class LayeParser
 
         return new LayeAst.StructDeclaration(structKw, structName, fields.ToArray());
     }
+
+    private LayeAst.EnumDeclaration? ReadEnumDeclaration()
+    {
+        if (!ExpectKeyword(Keyword.Enum, out var enumKw))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `enum` to begin enum declaration"));
+            return null;
+        }
+
+        if (!ExpectIdentifier(out var enumName))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier for enum name"));
+            return null;
+        }
+
+        if (!ExpectDelimiter(Delimiter.OpenBrace, out _))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `{` to open enum variants"));
+            return null;
+        }
+
+        var variants = new List<LayeAst.VariantData>();
+        while (!IsEoF && !CheckDelimiter(Delimiter.CloseBrace))
+        {
+            if (!ExpectIdentifier(out var variantName))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as variant name"));
+                return null;
+            }
+
+            if (CheckDelimiter(Delimiter.OpenParen))
+            {
+                Advance(); // `(`
+
+                var variantFields = new List<LayeAst.ParamData>();
+                while (!IsEoF)
+                {
+                    var fieldType = TryReadTypeNode(isRequired: true);
+                    if (fieldType is null)
+                    {
+                        AssertHasErrors("parsing union variant field type");
+                        return null;
+                    }
+
+                    if (!ExpectIdentifier(out var fieldName))
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as union variant field name"));
+                        return null;
+                    }
+
+                    variantFields.Add(new(new(fieldType, fieldName), null, null));
+
+                    if (CheckDelimiter(Delimiter.Comma))
+                        Advance(); // `,`
+                    else break;
+                }
+
+                if (!ExpectDelimiter(Delimiter.CloseParen))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close union variant fields"));
+                    return null;
+                }
+
+                variants.Add(new(variantName, null, variantFields.ToArray()));
+            }
+            else variants.Add(new(variantName, null, Array.Empty<LayeAst.ParamData>()));
+
+            if (CheckDelimiter(Delimiter.Comma))
+                Advance(); // `,`
+            else break;
+        }
+
+        if (!ExpectDelimiter(Delimiter.CloseBrace, out _))
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `}` to close enum variants"));
+            return null;
+        }
+
+        var enumDecl = new LayeAst.EnumDeclaration(enumKw, enumName, variants.ToArray());
+        if (enumDecl.HasBothEnumAndUnionVariants)
+        {
+            m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "enum declaration contains both explicit enumeration values and tagged union fields"));
+            return null;
+        }
+
+        return enumDecl;
+    }
     
     private LayeAst.FunctionDeclaration? ReadFunctionDeclaration()
     {
@@ -713,45 +821,48 @@ internal sealed class LayeParser
         VarArgsKind vaKind = VarArgsKind.None;
         LayeToken.Keyword? varargsKeyword = null;
 
-        while (!CheckDelimiter(Delimiter.CloseParen, out var _))
+        if (!CheckDelimiter(Delimiter.CloseParen))
         {
-            if (CheckKeyword(Keyword.VarArgs, out varargsKeyword))
+            while (!IsEoF /* !CheckDelimiter(Delimiter.CloseParen, out var _) */)
             {
-                Advance(); // `varargs`
-
-                if (CheckDelimiter(Delimiter.CloseParen, out var _))
+                if (CheckKeyword(Keyword.VarArgs, out varargsKeyword))
                 {
-                    vaKind = VarArgsKind.C;
-                    break;
+                    Advance(); // `varargs`
+
+                    if (CheckDelimiter(Delimiter.CloseParen, out var _))
+                    {
+                        vaKind = VarArgsKind.C;
+                        break;
+                    }
+                    else vaKind = VarArgsKind.Laye;
                 }
-                else vaKind = VarArgsKind.Laye;
+
+                var paramType = TryReadTypeNode(true);
+                if (paramType is null)
+                {
+                    AssertHasErrors("failing to parse function parameter type");
+                    return null;
+                }
+
+                if (!ExpectIdentifier(out var paramName))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as parameter name"));
+                    return null;
+                }
+
+                var paramBinding = new LayeAst.BindingData(paramType, paramName);
+                paramData.Add(new LayeAst.ParamData(paramBinding, null, null));
+
+                if (vaKind != VarArgsKind.None)
+                    break;
+
+                if (CheckDelimiter(Delimiter.Comma, out var comma))
+                {
+                    Advance(); // `,`
+                    paramDelims.Add(comma);
+                }
+                else break;
             }
-
-            var paramType = TryReadTypeNode(true);
-            if (paramType is null)
-            {
-                AssertHasErrors("failing to parse function parameter type");
-                return null;
-            }
-
-            if (!ExpectIdentifier(out var paramName))
-            {
-                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as parameter name"));
-                return null;
-            }
-
-            var paramBinding = new LayeAst.BindingData(paramType, paramName);
-            paramData.Add(new LayeAst.ParamData(paramBinding, null, null));
-
-            if (vaKind != VarArgsKind.None)
-                break;
-
-            if (CheckDelimiter(Delimiter.Comma, out var comma))
-            {
-                Advance(); // `,`
-                paramDelims.Add(comma);
-            }
-            else break;
         }
 
         if (!ExpectDelimiter(Delimiter.CloseParen, out var closeParams))
@@ -814,7 +925,51 @@ internal sealed class LayeParser
 
     private LayeAst.Stmt? ReadStatement()
     {
-        if (CheckKeyword(Keyword.Return, out var returnKw))
+        if (CheckKeyword(Keyword.Dynamic_Append, out var dynapKw))
+        {
+            Advance(); // `dynamic_append`
+
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open dynamic_append"));
+                return null;
+            }
+
+            var target = ReadExpression();
+            if (target is null)
+            {
+                AssertHasErrors("reading dynamic append target");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.Comma))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `,` to separate target and value in dynamic_append"));
+                return null;
+            }
+
+            var value = ReadExpression();
+            if (value is null)
+            {
+                AssertHasErrors("reading dynamic append value");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen, out var closep))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close dynamic_append"));
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.SemiColon))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate dynamic_append1"));
+                return null;
+            }
+
+            return new LayeAst.DynamicAppend(SourceSpan.Combine(dynapKw, closep), target, value);
+        }
+        else if (CheckKeyword(Keyword.Return, out var returnKw))
         {
             Advance(); // `return`
 
@@ -830,7 +985,7 @@ internal sealed class LayeParser
 
                 if (!ExpectDelimiter(Delimiter.SemiColon, out _))
                 {
-                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to close return"));
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate return"));
                     return null;
                 }
             }
@@ -1105,12 +1260,65 @@ internal sealed class LayeParser
         else if (CheckIdentifier(out var ident))
         {
             Advance(); // identifier
-            result = new LayeAst.NameLookup(ident);
+            if (CheckDelimiter(Delimiter.PathSeparator))
+            {
+                Advance(); // `::`
+
+                LayeAst.NamePathPart variantPart;
+                if (CheckKeyword(Keyword.Nil, out var kwNil))
+                {
+                    Advance();
+                    variantPart = new LayeAst.NamePathPart(kwNil);
+                }
+                else
+                {
+                    if (!ExpectIdentifier(out var variant))
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as variant name"));
+                        return null;
+                    }
+
+                    variantPart = new LayeAst.NamePathPart(variant);
+                }
+
+                result = new LayeAst.PathLookup(new LayeAst.JoinedPath(new LayeAst.NamePathPart(ident), variantPart));
+            }
+            else result = new LayeAst.NameLookup(ident);
+        }
+        else if (CheckDelimiter(Delimiter.PathSeparator))
+        {
+            var location = CurrentToken.SourceSpan.StartLocation;
+
+            Advance(); // `::`
+
+            LayeAst.NamePathPart variantPart;
+            if (CheckKeyword(Keyword.Nil, out var kwNil))
+            {
+                Advance();
+                variantPart = new LayeAst.NamePathPart(kwNil);
+            }
+            else
+            {
+                if (!ExpectIdentifier(out var variant))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier as variant name"));
+                    return null;
+                }
+
+                variantPart = new LayeAst.NamePathPart(variant);
+            }
+
+            result = new LayeAst.PathLookup(new LayeAst.JoinedPath(new LayeAst.EmptyPathPart(location), variantPart));
         }
         else if (CheckKeyword(Keyword.NullPtr, out var nullptrKw))
         {
             Advance(); // `nullptr`
             result = new LayeAst.NullPtr(nullptrKw);
+        }
+        else if (CheckKeyword(Keyword.Nil, out var nilKw))
+        {
+            Advance(); // `nil`
+            result = new LayeAst.Nil(nilKw);
         }
         else if (CheckKeyword(Keyword.True, out var trueKw))
         {
@@ -1239,6 +1447,55 @@ internal sealed class LayeParser
                 Debug.Assert(expr is not null);
                 return new LayeAst.SizeOfExpression(expr);
             }
+        }
+        else if (CheckKeyword(Keyword.NameOf))
+        {
+            Advance(); // `nameof`
+
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open `nameof` argument"));
+                return null;
+            }
+
+            if (!ExpectIdentifier(out var name))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected identifier in `nameof` expression"));
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close `sizeof` argument"));
+                return null;
+            }
+
+            return new LayeAst.String(new LayeToken.String(name.SourceSpan, name.Image));
+        }
+        else if (CheckKeyword(Keyword.NameOf_Variant))
+        {
+            Advance(); // `nameof_variant`
+
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open `nameof_variant` argument"));
+                return null;
+            }
+
+            var expr = ReadExpression();
+            if (expr is null)
+            {
+                AssertHasErrors("reading nameof_variant contents");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close `nameof_variant` argument"));
+                return null;
+            }
+
+            return new LayeAst.NameOfVariant(expr);
         }
         else m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "unexpected token when parsing primary expression"));
 

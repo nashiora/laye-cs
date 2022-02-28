@@ -46,7 +46,7 @@ internal sealed class SymbolTable
     }
 }
 
-internal abstract record class Symbol
+internal abstract class Symbol
 {
     public string Name { get; init; }
     public SymbolType? Type { get; set; }
@@ -62,7 +62,7 @@ internal abstract record class Symbol
         Type = type;
     }
 
-    public sealed record class Binding : Symbol
+    public sealed class Binding : Symbol
     {
         public Binding(string name)
             : base(name)
@@ -75,7 +75,7 @@ internal abstract record class Symbol
         }
     }
 
-    public sealed record class Function : Symbol<SymbolType.Function>
+    public sealed class Function : Symbol<SymbolType.Function>
     {
         public Function(string name)
             : base(name)
@@ -88,7 +88,7 @@ internal abstract record class Symbol
         }
     }
 
-    public sealed record class Struct : Symbol<SymbolType.Struct>
+    public sealed class Struct : Symbol<SymbolType.Struct>
     {
         public Struct(string name)
             : base(name)
@@ -100,9 +100,35 @@ internal abstract record class Symbol
         {
         }
     }
+
+    public sealed class Enum : Symbol<SymbolType.Enum>
+    {
+        public Enum(string name)
+            : base(name)
+        {
+        }
+
+        public Enum(string name, SymbolType.Enum? type)
+            : base(name, type)
+        {
+        }
+    }
+
+    public sealed class Union : Symbol<SymbolType.Union>
+    {
+        public Union(string name)
+            : base(name)
+        {
+        }
+
+        public Union(string name, SymbolType.Union? type)
+            : base(name, type)
+        {
+        }
+    }
 }
 
-internal abstract record class Symbol<TSymbolType> : Symbol
+internal abstract class Symbol<TSymbolType> : Symbol
     where TSymbolType : SymbolType
 {
     public new TSymbolType? Type
@@ -162,6 +188,8 @@ internal static class SymbolTypes
     public static readonly SymbolType.UntypedString UntypedString = new();
     public static readonly SymbolType.String String = new();
 
+    public static readonly SymbolType.UntypedNil UntypedNil = new();
+
     public static readonly SymbolType.RawPtr RawPtr = new();
 
     public static readonly SymbolType.Buffer U8Buffer = new(U8, AccessKind.ReadWrite);
@@ -198,19 +226,24 @@ internal abstract record class SymbolType(string Name)
     public sealed record class UntypedString() : SymbolType("<untyped string>");
     public sealed record class String() : SymbolType("string");
 
+    public sealed record class UntypedNil() : SymbolType("nil");
+
     public sealed record class RawPtr() : SymbolType("rawptr");
     public sealed record class Array(SymbolType ElementType, uint ElementCount, bool ReadOnly = false) : SymbolType($"{ElementType}{(ReadOnly ? " readonly" : "")}[{ElementCount}]");
     public sealed record class Pointer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}*");
     public sealed record class Buffer(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}[*]");
     public sealed record class Slice(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}[]");
+    public sealed record class Dynamic(SymbolType ElementType, AccessKind Access = AccessKind.ReadWrite) : SymbolType($"{ElementType}{(Access != AccessKind.ReadWrite ? $" {Access.ToString().ToLower()}" : "")}[dynamic]");
 
     public sealed record class Function(string Name, CallingConvention CallingConvention, SymbolType ReturnType, (SymbolType Type, string Name)[] Parameters, VarArgsKind VarArgs)
         : SymbolType(FunctionTypeToString(Name, CallingConvention, ReturnType, Parameters.Select(p => $"{p.Type} {p.Name}").ToArray(), VarArgs));
     public sealed record class FunctionPointer(CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs)
         : SymbolType(FunctionTypeToString(null, CallingConvention, ReturnType, ParameterTypes.Select(p => p.Name).ToArray(), VarArgs));
     public sealed record class Struct(string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
-    public sealed record class Union(string Name, (SymbolType Type, string Name)[] Variants) : SymbolType(Name);
-    public sealed record class Enum(string Name, (string Name, uint Value)[] Variants) : SymbolType(Name);
+    public sealed record class Enum(Symbol.Enum EnumSymbol, string Name, (string Name, ulong Value)[] Variants) : SymbolType(Name);
+
+    public sealed record class UnionVariant(string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
+    public sealed record class Union(Symbol.Union UnionSymbol, string Name, UnionVariant[] Variants) : SymbolType(Name);
 
     public sealed override string ToString() => Name;
 

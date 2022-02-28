@@ -14,12 +14,15 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ParamData(BindingData Binding, LayeToken.Operator? AssignOperator, Expr? DefaultValue)
         : LayeAst(SourceSpan.Combine(new IHasSourceSpan?[] { Binding, DefaultValue }));
 
-    public abstract record class PathPart(SourceSpan SourceSpan);
-    public sealed record class EmptyPathPart(SourceLocation Location) : PathPart(new SourceSpan(Location, Location));
+    // NOTE(local): this implies that union variants cannot have 0 fields when a field list is given as that would appear identical to a non-union variant
+    public sealed record class VariantData(LayeToken.Identifier VariantName, Expr? VariantValue, ParamData[] VariantFields)
+        : LayeAst(SourceSpan.Combine(VariantName, VariantValue, VariantFields.LastOrDefault()));
+
+    public abstract record class PathPart(SourceSpan SourceSpan) : IHasSourceSpan;
+    public sealed record class EmptyPathPart(SourceLocation Location) : PathPart(new SourceSpan(Location));
     public sealed record class GlobalPathPart(LayeToken.Keyword GlobalKeyword) : PathPart(GlobalKeyword.SourceSpan);
-    public sealed record class NamePathPart(LayeToken.Identifier Name) : PathPart(Name.SourceSpan);
-    public sealed record class JoinedPath(PathPart BasePath, LayeToken.Delimiter PathSeparator, NamePathPart LookupPart)
-        : PathPart(new SourceSpan(BasePath.SourceSpan.StartLocation, LookupPart.SourceSpan.EndLocation));
+    public sealed record class NamePathPart(LayeToken Name) : PathPart(Name.SourceSpan);
+    public sealed record class JoinedPath(PathPart BasePath, NamePathPart LookupPart) : PathPart(SourceSpan.Combine(BasePath, LookupPart));
 
     public abstract record class TypeParam(LayeToken.Identifier Name) : LayeAst(Name.SourceSpan);
     public sealed record class TypeParamType(LayeToken.Identifier Name) : TypeParam(Name);
@@ -146,6 +149,14 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class SliceType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Delimiter CloseBracket)
         : Type(SourceSpan.Combine(ElementType, CloseBracket));
 
+    /// <summary>
+    /// Examples: 
+    ///   - u8[]
+    ///   - vec4 readonly[]
+    /// </summary>
+    public sealed record class DynamicType(Type ElementType, ContainerModifiers Modifiers, LayeToken.Delimiter OpenBracket, LayeToken.Keyword DynamicKeyword, LayeToken.Delimiter CloseBracket)
+        : Type(SourceSpan.Combine(ElementType, CloseBracket));
+
 #if false // less useful types for now
     /// <summary>
     /// Examples: 
@@ -178,6 +189,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Bool(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
     public sealed record class String(LayeToken.String Literal) : Expr(Literal.SourceSpan);
     public sealed record class NullPtr(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
+    public sealed record class Nil(LayeToken.Keyword Literal) : Expr(Literal.SourceSpan);
 
     public sealed record class NameLookup(LayeToken.Identifier Name) : Expr(Name.SourceSpan);
     public sealed record class PathLookup(PathPart Path) : Expr(Path.SourceSpan);
@@ -193,6 +205,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
         : Expr(SourceSpan.Combine(CastKeyword, TargetExpression));
     public sealed record class SizeOfType(Type _Type) : Expr(_Type.SourceSpan);
     public sealed record class SizeOfExpression(Expr Expression) : Expr(Expression.SourceSpan);
+    public sealed record class NameOfVariant(Expr Expression) : Expr(Expression.SourceSpan);
 
     public sealed record class PrefixOperation(LayeToken.Operator Operator, Expr Expression)
         : Expr(SourceSpan.Combine(Operator, Expression));
@@ -215,6 +228,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class ExpressionStatement(Expr Expression, LayeToken.Delimiter Terminator) : Stmt(Expression.SourceSpan);
     public sealed record class Assignment(Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan.Combine(TargetExpression, ValueExpression));
+    public sealed record class DynamicAppend(SourceSpan SourceSpan, Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan);
 
     public sealed record class Block(LayeToken.Delimiter Start, LayeToken.Delimiter End, Stmt[] Body)
         : Stmt(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));
@@ -239,6 +253,14 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
 
     public sealed record class StructDeclaration(LayeToken.Keyword StructKeyword, LayeToken.Identifier Name, ParamData[] Fields)
         : Stmt(SourceSpan.Combine(StructKeyword, Name));
+    public sealed record class EnumDeclaration(LayeToken.Keyword EnumKeyword, LayeToken.Identifier Name, VariantData[] Variants)
+        : Stmt(SourceSpan.Combine(EnumKeyword, Name))
+    {
+        public bool HasBothEnumAndUnionVariants => IsUnion && IsEnum;
+
+        public bool IsEnum => Variants.Any(v => v.VariantValue is not null);
+        public bool IsUnion => Variants.Any(v => v.VariantFields.Length > 0);
+    }
 
     public sealed record class FunctionDeclaration(FunctionModifiers Modifiers, Type ReturnType, LayeToken.Identifier Name, LayeToken.Delimiter OpenParams,
         ParamData[] Parameters, LayeToken.Delimiter[] ParameterSeparators, LayeToken.Keyword? VarargsKeyword, VarArgsKind VarArgsKind, LayeToken.Delimiter CloseParams, FunctionBody Body)

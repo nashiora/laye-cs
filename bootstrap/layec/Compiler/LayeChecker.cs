@@ -24,6 +24,11 @@ internal sealed class LayeChecker
     private readonly Dictionary<string, string> m_headerToImpls = new();
     private readonly Dictionary<string, string> m_implToHeader = new();
 
+    private readonly Stack<SymbolType> m_typeContextStack = new();
+    private SymbolType? CurrentTypeContext => m_typeContextStack.TryPeek(out var type) ? type : null;
+    private void PushTypeContext(SymbolType type) => m_typeContextStack.Push(type);
+    private void PopTypeContext() => m_typeContextStack.Pop();
+
     private LayeChecker(LayeAstRoot[] syntax, SymbolTable symbols, List<Diagnostic> diagnostics)
     {
         m_syntax = syntax;
@@ -60,6 +65,24 @@ internal sealed class LayeChecker
                         if (!m_globalSymbols.AddSymbol(sym))
                         {
                             m_diagnostics.Add(new Diagnostic.Error(structDecl.Name.SourceSpan, $"`{sym.Name}` is already defined in this scope"));
+                            return Array.Empty<LayeCstRoot>();
+                        }
+                    } break;
+                    
+                    case LayeAst.EnumDeclaration enumDecl:
+                    {
+                        Debug.Assert(!enumDecl.HasBothEnumAndUnionVariants, "the parser didn't check for enum/union distinction");
+
+                        Symbol sym;
+                        if (enumDecl.IsUnion)
+                            sym = new Symbol.Union(enumDecl.Name.Image);
+                        else sym = new Symbol.Enum(enumDecl.Name.Image);
+
+                        syms[enumDecl] = sym;
+
+                        if (!m_globalSymbols.AddSymbol(sym))
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"`{sym.Name}` is already defined in this scope"));
                             return Array.Empty<LayeCstRoot>();
                         }
                     } break;
@@ -144,6 +167,107 @@ internal sealed class LayeChecker
 
                                 sym.Type = new SymbolType.Struct(structDecl.Name.Image, fields.ToArray());
                             } break;
+
+                            case LayeAst.EnumDeclaration enumDecl:
+                            {
+                                var sym = syms[enumDecl];
+                                if (sym.Type is not null) continue;
+
+                                if (sym is Symbol.Union symUnion)
+                                {
+                                    bool unionBuildFailed = false;
+
+                                    var variants = new SymbolType.UnionVariant[enumDecl.Variants.Length];
+                                    for (int v = 0; !unionBuildFailed && v < enumDecl.Variants.Length; v++)
+                                    {
+                                        var variant = enumDecl.Variants[v];
+                                        for (int j = 0; j < v; j++)
+                                        {
+                                            if (variants[j].Name == variant.VariantName.Image)
+                                            {
+                                                m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"enum `{sym.Name}` already defines a variant `{variant.VariantName.Image}`"));
+                                                return Array.Empty<LayeCstRoot>();
+                                            }
+                                        }
+
+                                        var fields = new (SymbolType Type, string Name)[variant.VariantFields.Length];
+                                        for (int i = 0; i < fields.Length; i++)
+                                        {
+                                            var field = variant.VariantFields[i];
+                                            for (int j = 0; j < i; j++)
+                                            {
+                                                if (fields[j].Name == field.Binding.BindingName.Image)
+                                                {
+                                                    m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"variant `{variant.VariantName.Image}` in enum `{sym.Name}` already defines a field `{field.Binding.BindingName.Image}`"));
+                                                    return Array.Empty<LayeCstRoot>();
+                                                }
+                                            }
+
+                                            var fieldType = ResolveType(field.Binding.BindingType, isRequired);
+                                            if (fieldType is null)
+                                            {
+                                                if (isRequired)
+                                                {
+                                                    AssertHasErrors("resolving enum variant field type");
+                                                    return Array.Empty<LayeCstRoot>();
+                                                }
+                                                else
+                                                {
+                                                    unionBuildFailed = true;
+                                                    break;
+                                                }
+                                            }
+
+                                            fields[i] = (fieldType, field.Binding.BindingName.Image);
+                                        }
+
+                                        if (!unionBuildFailed)
+                                            variants[v] = new SymbolType.UnionVariant(variant.VariantName.Image, fields);
+                                    }
+
+                                    if (unionBuildFailed)
+                                    {
+                                        isTypeCreationComplete = false;
+                                        break;
+                                    }
+
+                                    sym.Type = new SymbolType.Union((Symbol.Union)sym, enumDecl.Name.Image, variants);
+                                }
+                                else if (sym is Symbol.Enum symEnum)
+                                {
+                                    var variants = new (string Name, ulong Value)[enumDecl.Variants.Length];
+
+                                    ulong variantValue = 0;
+                                    for (int v = 0; v < enumDecl.Variants.Length; v++, variantValue++)
+                                    {
+                                        var variant = enumDecl.Variants[v];
+                                        for (int j = 0; j < v; j++)
+                                        {
+                                            if (variants[j].Name == variant.VariantName.Image)
+                                            {
+                                                m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"enum `{sym.Name}` already defines a variant `{variant.VariantName.Image}`"));
+                                                return Array.Empty<LayeCstRoot>();
+                                            }
+                                        }
+
+                                        if (variant.VariantValue is not null)
+                                        {
+                                            if (variant.VariantValue is LayeAst.Integer variantValueInteger)
+                                                variantValue = variantValueInteger.Literal.LiteralValue;
+                                            else
+                                            {
+                                                m_diagnostics.Add(new Diagnostic.Error(variant.SourceSpan, "only constant unsigned integer literal values are supported as enum values"));
+                                                return Array.Empty<LayeCstRoot>();
+                                            }
+                                        }
+
+                                        variants[v] = (variant.VariantName.Image, variantValue);
+                                    }
+
+                                    sym.Type = new SymbolType.Enum((Symbol.Enum)sym, enumDecl.Name.Image, variants);
+                                }
+                                else throw new NotImplementedException("unreachable");
+                            } break;
                         }
                     }
                 }
@@ -159,6 +283,7 @@ internal sealed class LayeChecker
                 switch (node)
                 {
                     case LayeAst.StructDeclaration structDecl: break;
+                    case LayeAst.EnumDeclaration structDecl: break;
 
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
@@ -210,6 +335,7 @@ internal sealed class LayeChecker
                 switch (node)
                 {
                     case LayeAst.StructDeclaration: break;
+                    case LayeAst.EnumDeclaration: break;
 
                     case LayeAst.FunctionDeclaration fnDecl:
                     {
@@ -250,22 +376,27 @@ internal sealed class LayeChecker
                 {
                     case LayeAst.NamePathPart namePart:
                     {
-                        var symbol = CurrentScope.LookupSymbol(namePart.Name.Image);
+                        Debug.Assert(namePart.Name is LayeToken.Identifier, "named typed was not an identifier");
+                        string name = ((LayeToken.Identifier)namePart.Name).Image;
+
+                        var symbol = CurrentScope.LookupSymbol(name);
                         if (symbol is null)
                         {
                             if (reportErrors)
-                                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"the name `{namePart.Name.Image}` does not exist in the current context"));
+                                m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"the name `{name}` does not exist in the current context"));
                             return null;
                         }
 
                         switch (symbol)
                         {
                             case Symbol.Struct structSymbol: return structSymbol.Type!;
+                            case Symbol.Enum enumSymbol: return enumSymbol.Type!;
+                            case Symbol.Union unionSymbol: return unionSymbol.Type!;
 
                             default:
                             {
                                 if (reportErrors)
-                                    m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"`{namePart.Name.Image}` is not a type"));
+                                    m_diagnostics.Add(new Diagnostic.Error(astType.SourceSpan, $"`{name}` is not a type"));
                                 return null;
                             }
                         }
@@ -351,6 +482,19 @@ internal sealed class LayeChecker
                 }
 
                 return new SymbolType.Slice(elementType, sliceType.Modifiers.Access);
+            }
+
+            case LayeAst.DynamicType dynType:
+            {
+                var elementType = ResolveType(dynType.ElementType);
+                if (elementType is null)
+                {
+                    if (reportErrors)
+                        AssertHasErrors("resolving dynamic element type");
+                    return null;
+                }
+
+                return new SymbolType.Dynamic(elementType, dynType.Modifiers.Access);
             }
 
             case LayeAst.FunctionType functionType:
@@ -477,6 +621,10 @@ internal sealed class LayeChecker
                     return null;
                 }
 
+                bool pushed = bindingType is not null;
+                if (pushed)
+                    PushTypeContext(bindingType!);
+
                 LayeCst.Expr? expression = null;
 
                 if (bindingDecl.Expression is not null)
@@ -485,6 +633,8 @@ internal sealed class LayeChecker
                     if (expression is null)
                     {
                         AssertHasErrors("failing to check binding expression");
+                        if (pushed)
+                            PopTypeContext();
                         return null;
                     }
 
@@ -494,11 +644,16 @@ internal sealed class LayeChecker
                         if (expression is null)
                         {
                             AssertHasErrors("failing to check binding expression implicit cast to binding type");
+                            if (pushed)
+                                PopTypeContext();
                             return null;
                         }
                     }
                     else bindingType = expression.Type;
                 }
+
+                if (pushed)
+                    PopTypeContext();
 
                 var bindingSymbol = new Symbol.Binding(bindingDecl.Name.Image, bindingType);
                 CurrentScope.AddSymbol(bindingSymbol);
@@ -584,10 +739,13 @@ internal sealed class LayeChecker
                     return null;
                 }
 
+                PushTypeContext(targetExpression.Type);
+
                 var valueExpression = CheckExpression(assignmentStmt.ValueExpression);
                 if (valueExpression is null)
                 {
                     AssertHasErrors("checking assignment value");
+                    PopTypeContext();
                     return null;
                 }
 
@@ -595,10 +753,57 @@ internal sealed class LayeChecker
                 if (valueExpression is null)
                 {
                     AssertHasErrors("checking assignment value implicit conversion");
+                    PopTypeContext();
                     return null;
                 }
 
+                PopTypeContext();
+
                 return new LayeCst.Assignment(targetExpression, valueExpression);
+            }
+
+            case LayeAst.DynamicAppend dynamicAppendStmt:
+            {
+                var targetExpression = CheckExpression(dynamicAppendStmt.TargetExpression);
+                if (targetExpression is null)
+                {
+                    AssertHasErrors("checking dynamic append target");
+                    return null;
+                }
+
+                if (!targetExpression.CheckIsLValue())
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(dynamicAppendStmt.TargetExpression.SourceSpan, "target of dynamic append must be an l-value"));
+                    return null;
+                }
+
+                if (targetExpression.Type is not SymbolType.Dynamic dynamicType)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(dynamicAppendStmt.TargetExpression.SourceSpan, "target of dynamic append must be a dynamic"));
+                    return null;
+                }
+
+                PushTypeContext(dynamicType.ElementType);
+
+                var valueExpression = CheckExpression(dynamicAppendStmt.ValueExpression);
+                if (valueExpression is null)
+                {
+                    AssertHasErrors("checking dynamic append value");
+                    PopTypeContext();
+                    return null;
+                }
+
+                valueExpression = CheckImplicitTypeCast(valueExpression, dynamicType.ElementType);
+                if (valueExpression is null)
+                {
+                    AssertHasErrors("checking dynamic append value implicit conversion");
+                    PopTypeContext();
+                    return null;
+                }
+
+                PopTypeContext();
+
+                return new LayeCst.DynamicAppend(dynamicAppendStmt.SourceSpan, targetExpression, valueExpression);
             }
 
             case LayeAst.Block blockStmt:
@@ -758,6 +963,7 @@ internal sealed class LayeChecker
             case LayeAst.Bool boolLit: return new LayeCst.Bool(boolLit.Literal, SymbolTypes.Bool);
             case LayeAst.String stringLit: return new LayeCst.String(stringLit.Literal, new SymbolType.UntypedString());
             case LayeAst.NullPtr nullptrLit: return new LayeCst.NullPtr(nullptrLit.Literal, SymbolTypes.RawPtr, SymbolTypes.U8);
+            case LayeAst.Nil nilLit: return new LayeCst.Nil(nilLit.Literal, SymbolTypes.UntypedNil);
 
             case LayeAst.NameLookup nameLookupExpr:
             {
@@ -777,6 +983,127 @@ internal sealed class LayeChecker
                 return new LayeCst.LoadValue(nameLookupExpr.SourceSpan, symbol);
             }
 
+            case LayeAst.PathLookup pathLookupExpr:
+            {
+                // if we get here, we assume whatever we can load does not require construction arguments
+                // if they do, the invoke expression will have checked for that
+
+                switch (pathLookupExpr.Path)
+                {
+                    case LayeAst.JoinedPath joined:
+                    {
+                        Symbol baseSymbol;
+
+                        // TODO(local): check if we've pushed a type onto the type context stack that we can use to infer an empty left-hand side
+
+                        if (joined.BasePath is LayeAst.EmptyPathPart baseEmpty)
+                        {
+                            if (CurrentTypeContext is SymbolType.Enum typeContextEnum)
+                                baseSymbol = typeContextEnum.EnumSymbol;
+                            else if (CurrentTypeContext is SymbolType.Union typeContextUnion)
+                                baseSymbol = typeContextUnion.UnionSymbol;
+                            else
+                            {
+                                m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, "invalid path lookup expression: cannot infer left-hand of the path"));
+                                m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, $"debug: current type context is {CurrentTypeContext}"));
+                                return null;
+                            }
+                        }
+                        else if (joined.BasePath is LayeAst.NamePathPart baseNamePart)
+                        {
+                            Debug.Assert(baseNamePart.Name is LayeToken.Identifier, "named typed was not an identifier");
+                            string baseName = ((LayeToken.Identifier)baseNamePart.Name).Image;
+
+                            var lookupSymbol = CurrentScope.LookupSymbol(baseName);
+                            if (lookupSymbol is null)
+                            {
+                                m_diagnostics.Add(new Diagnostic.Error(baseNamePart.SourceSpan, $"the name `{baseName}` does not exist in the current context"));
+                                return null;
+                            }
+
+                            baseSymbol = lookupSymbol;
+                        }
+                        else
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, "invalid path lookup expression: unsupported left-hand of path"));
+                            return null;
+                        }
+
+                        var variantNamePart = joined.LookupPart.Name;
+                        switch (baseSymbol)
+                        {
+                            case Symbol.Enum enumSymbol:
+                            {
+                                if (variantNamePart is not LayeToken.Identifier variantNameIdent)
+                                {
+                                    m_diagnostics.Add(new Diagnostic.Error(variantNamePart.SourceSpan, $"non-union enums do not have a nil variant"));
+                                    return null;
+                                }
+
+                                string variantName = variantNameIdent.Image;
+
+                                Debug.Assert(enumSymbol.Type is not null, "no enum type during expression checking");
+                                var enumType = enumSymbol.Type!;
+
+                                var maybeVariant = enumType.Variants.Where(v => v.Name == variantName);
+                                if (maybeVariant.Count() != 1)
+                                {
+                                    m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, $"enum `{enumSymbol.Name}` does not contain a variant `{variantName}`"));
+                                    return null;
+                                }
+
+                                var (Name, Value) = maybeVariant.Single();
+                                return new LayeCst.LoadEnumVariant(pathLookupExpr.SourceSpan, enumSymbol, Name, Value);
+                            }
+
+                            case Symbol.Union unionSymbol:
+                            {
+                                Debug.Assert(unionSymbol.Type is not null, "no union type during expression checking");
+                                var unionType = unionSymbol.Type!;
+
+                                if (variantNamePart is LayeToken.Identifier variantNameIdent)
+                                {
+                                    string variantName = variantNameIdent.Image;
+
+                                    var maybeVariant = unionType.Variants.Where(v => v.Name == variantName);
+                                    if (maybeVariant.Count() != 1)
+                                    {
+                                        m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, $"enum `{unionSymbol.Name}` does not contain a variant `{variantName}`"));
+                                        return null;
+                                    }
+
+                                    var variant = maybeVariant.Single();
+                                    if (variant.Fields.Length > 0)
+                                    {
+                                        m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, $"variant `{variant.Name}` in enum `{unionSymbol.Name}` requires construction"));
+                                        return null;
+                                    }
+
+                                    return new LayeCst.LoadUnionVariant(pathLookupExpr.SourceSpan, unionSymbol, variant, Array.Empty<LayeCst.Expr>());
+                                }
+                                else
+                                {
+                                    Debug.Assert(variantNamePart is LayeToken.Keyword vnkw && vnkw.Kind == Keyword.Nil, "non-identifier variant was not nil");
+                                    return new LayeCst.LoadUnionNilVariant(pathLookupExpr.SourceSpan, unionSymbol);
+                                }
+                            }
+
+                            default:
+                            {
+                                m_diagnostics.Add(new Diagnostic.Error(joined.BasePath.SourceSpan, $"symbol `{baseSymbol.Name}` does not have variants"));
+                                return null;
+                            }
+                        }
+                    }
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(pathLookupExpr.SourceSpan, "invalid path lookup expression"));
+                        return null;
+                    }
+                }
+            }
+
             case LayeAst.NamedIndex namedIndexExpr:
             {
                 var target = CheckExpression(namedIndexExpr.TargetExpression);
@@ -788,6 +1115,8 @@ internal sealed class LayeChecker
 
                 string indexName = namedIndexExpr.Name.Image;
 
+                bool hasDereferenced = false;
+            generate_index:
                 switch (target.Type)
                 {
                     case SymbolType.String:
@@ -806,7 +1135,16 @@ internal sealed class LayeChecker
                         if (indexName == "length")
                             return new LayeCst.SliceLengthLookup(namedIndexExpr.SourceSpan, target);
 
-                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `slice` does not contain a field named `{indexName}`"));
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `{sliceType}` does not contain a field named `{indexName}`"));
+                        return null;
+                    }
+
+                    case SymbolType.Dynamic dynamicType:
+                    {
+                        if (indexName == "length")
+                            return new LayeCst.DynamicLengthLookup(namedIndexExpr.SourceSpan, target);
+
+                        m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"type `{dynamicType}` does not contain a field named `{indexName}`"));
                         return null;
                     }
 
@@ -822,6 +1160,14 @@ internal sealed class LayeChecker
                         }
 
                         return new LayeCst.NamedIndex(target, namedIndexExpr.Name, fieldType);
+                    }
+
+                    case SymbolType.Pointer pointerType:
+                    {
+                        if (hasDereferenced) goto default;
+                        hasDereferenced = true;
+                        target = new LayeCst.ValueAt(target, pointerType.ElementType);
+                        goto generate_index;
                     }
 
                     default:
@@ -902,6 +1248,30 @@ internal sealed class LayeChecker
                         }
 
                         return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, sliceType.ElementType);
+                    }
+
+                    case SymbolType.Dynamic dynamicType:
+                    {
+                        if (indices.Length != 1)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"exactly one index argument required for type {target.Type}"));
+                            return null;
+                        }
+
+                        LayeCst.Expr index = indices[0];
+                        if (!index.Type.IsInteger() || index.Type is SymbolType.UntypedInteger)
+                        {
+                            var newIndex = CheckImplicitTypeCast(indices[0], SymbolTypes.UInt);
+                            if (newIndex is null)
+                            {
+                                AssertHasErrors("checking dynamic index implicit cast to uint");
+                                return null;
+                            }
+
+                            index = newIndex;
+                        }
+
+                        return new LayeCst.DynamicIndex(dynamicIndexExpr.SourceSpan, target, new[] { index }, dynamicType.ElementType);
                     }
 
                     case SymbolType.String stringType:
@@ -998,6 +1368,18 @@ internal sealed class LayeChecker
                         elementType = bufferType.ElementType;
                     } break;
 
+                    case SymbolType.Dynamic dynamicType:
+                    {
+                        if (countExpr is null)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(targetExpr.SourceSpan, "cannot slice dynamic type without a count"));
+                            return null;
+                        }
+
+                        m_diagnostics.Add(new Diagnostic.Warning(targetExpr.SourceSpan, "since the memory of a dynamic can move during appends, slicing a dynamic creates a copy of its contents"));
+                        elementType = dynamicType.ElementType;
+                    } break;
+
                     default:
                     {
                         m_diagnostics.Add(new Diagnostic.Error(targetExpr.SourceSpan, $"cannot index type {targetExpr.Type}"));
@@ -1049,10 +1431,13 @@ internal sealed class LayeChecker
                     {
                         if (namedType.TypePath is LayeAst.NamePathPart namePathPart)
                         {
-                            var symbol = CurrentScope.LookupSymbol(namePathPart.Name.Image);
+                            Debug.Assert(namePathPart.Name is LayeToken.Identifier, "named typed was not an identifier");
+                            string name = ((LayeToken.Identifier)namePathPart.Name).Image;
+
+                            var symbol = CurrentScope.LookupSymbol(name);
                             if (symbol is null)
                             {
-                                m_diagnostics.Add(new Diagnostic.Error(namePathPart.Name.SourceSpan, $"the name `{namePathPart.Name.Image}` does not exist in the current context"));
+                                m_diagnostics.Add(new Diagnostic.Error(namePathPart.Name.SourceSpan, $"the name `{name}` does not exist in the current context"));
                                 return null;
                             }
 
@@ -1069,6 +1454,29 @@ internal sealed class LayeChecker
                 }
 
                 return new LayeCst.SizeOf(_sizeof.SourceSpan, type);
+            }
+
+            case LayeAst.NameOfVariant nameofVariantExpr:
+            {
+                var expr = CheckExpression(nameofVariantExpr.Expression);
+                if (expr is null)
+                {
+                    AssertHasErrors("checking nameof_variant expression");
+                    return null;
+                }
+
+                switch (expr.Type)
+                {
+                    case SymbolType.Enum enumType: return new LayeCst.NameOfEnumVariant(nameofVariantExpr.SourceSpan, enumType, expr);
+                    case SymbolType.Union unionType: return new LayeCst.NameOfUnionVariantExpression(nameofVariantExpr.SourceSpan, unionType, expr);
+                    case SymbolType.UnionVariant variantType: return new LayeCst.NameOfUnionVariant(nameofVariantExpr.SourceSpan, variantType);
+
+                    default:
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(nameofVariantExpr.Expression.SourceSpan, $"expression in `nameof_variant` must evaluate to a typed enum, tagged union or tagged union variant value, evaluated to {expr.Type}"));
+                        return null;
+                    }
+                }
             }
 
             case LayeAst.PrefixOperation prefixExpr:
@@ -1126,13 +1534,14 @@ internal sealed class LayeChecker
                     return null;
                 }
 
-                if (expr.Type != SymbolTypes.Bool)
+                var boolExpr = CheckImplicitTypeCast(expr, SymbolTypes.Bool);
+                if (boolExpr is null)
                 {
                     m_diagnostics.Add(new Diagnostic.Error(expr.SourceSpan, "cannot perform logical not on non-bool expression"));
                     return null;
                 }
 
-                return new LayeCst.LogicalNot(expr);
+                return new LayeCst.LogicalNot(boolExpr);
             }
 
             case LayeAst.InfixOperation infixExpr:
@@ -1233,6 +1642,11 @@ internal sealed class LayeChecker
                                 return null;
                             }
                         }
+                        else if (leftExpr.Type is SymbolType.Union /* || leftExpr.Type is SymbolType.UnionVariant */
+                            && rightExpr is LayeCst.Nil)
+                        {
+                            return new LayeCst.CompareUnionToNil(infixExpr.SourceSpan, leftExpr);
+                        }
                         else if (leftExpr.Type != rightExpr.Type)
                             break;
 
@@ -1241,14 +1655,21 @@ internal sealed class LayeChecker
 
                     case Operator.CompareNotEqual:
                     {
-                        if (!(leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric()))
-                            break;
-
-                        if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                        if (leftExpr.Type.IsNumeric() && rightExpr.Type.IsNumeric())
                         {
-                            AssertHasErrors("upcasting infix expressions");
-                            return null;
+                            if (!CheckImplicitNumericUpcast(ref leftExpr, ref rightExpr))
+                            {
+                                AssertHasErrors("upcasting infix expressions");
+                                return null;
+                            }
                         }
+                        else if (leftExpr.Type is SymbolType.Union /* || leftExpr.Type is SymbolType.UnionVariant */
+                            && rightExpr is LayeCst.Nil)
+                        {
+                            return new LayeCst.LogicalNot(new LayeCst.CompareUnionToNil(infixExpr.SourceSpan, leftExpr));
+                        }
+                        else if (leftExpr.Type != rightExpr.Type)
+                            break;
 
                         return new LayeCst.CompareNotEqual(leftExpr, rightExpr);
                     }
@@ -1535,9 +1956,90 @@ internal sealed class LayeChecker
 
             return new LayeCst.InvokeFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());
         }
+        else if (invoke.TargetExpression is LayeAst.PathLookup pathLookup && pathLookup.Path is LayeAst.JoinedPath joinedPath)
+        {
+            if (joinedPath.LookupPart.Name is not LayeToken.Identifier)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(joinedPath.LookupPart.SourceSpan, $"can only construct namedd variants"));
+                return null;
+            }
+
+            Symbol.Union unionSymbol;
+
+            if (joinedPath.BasePath is LayeAst.NamePathPart enumTypeNamePart)
+            {
+                Debug.Assert(enumTypeNamePart.Name is LayeToken.Identifier, "named typed was not an identifier");
+                string name = ((LayeToken.Identifier)enumTypeNamePart.Name).Image;
+
+                var lookupSymbol = CurrentScope.LookupSymbol(name);
+                if (lookupSymbol is null)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(enumTypeNamePart.SourceSpan, $"the name `{name}` does not exist in the current context"));
+                    return null;
+                }
+
+                if (lookupSymbol is not Symbol.Union checkSymbol)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(enumTypeNamePart.SourceSpan, $"`{name}` must be a tagged union to construct a tagged union variant"));
+                    return null;
+                }
+
+                unionSymbol = checkSymbol;
+            }
+            else if (joinedPath.BasePath is LayeAst.EmptyPathPart emptyPart)
+            {
+                var typeContext = CurrentTypeContext;
+                if (typeContext is null || typeContext is not SymbolType.Union checkType)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(emptyPart.SourceSpan, $"`unable to infer the type of union to construct"));
+                    return null;
+                }
+
+                unionSymbol = checkType.UnionSymbol;
+            }
+            else
+            {
+                m_diagnostics.Add(new Diagnostic.Error(invoke.TargetExpression.SourceSpan, "can't invoke this"));
+                return null;
+            }
+
+            Debug.Assert(joinedPath.LookupPart.Name is LayeToken.Identifier, "named typed was not an identifier");
+            string lookupName = ((LayeToken.Identifier)joinedPath.LookupPart.Name).Image;
+
+            var maybeVariant = unionSymbol.Type!.Variants.Where(v => v.Name == lookupName);
+            if (maybeVariant.Count() != 1)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(joinedPath.LookupPart.SourceSpan, $"enum `{unionSymbol.Name}` does not contain a variant `{lookupName}`"));
+                return null;
+            }
+
+            var variant = maybeVariant.Single();
+
+            if (variant.Fields.Length != argValues.Length)
+            {
+                m_diagnostics.Add(new Diagnostic.Error(joinedPath.LookupPart.SourceSpan, $"variant `{lookupName}` in enum `{unionSymbol.Name}` requires exactly {variant.Fields.Length} arguments, got {argValues.Length}"));
+                return null;
+            }
+
+            for (int i = 0; i < argValues.Length; i++)
+            {
+                var arg = argValues[i];
+                var param = variant.Fields[i];
+
+                if (CheckImplicitTypeCast(arg, param.Type) is not LayeCst.Expr argCast)
+                {
+                    AssertHasErrors("failing to convert argument to the correct type");
+                    return null;
+                }
+
+                argValues[i] = argCast;
+            }
+
+            return new LayeCst.LoadUnionVariant(invoke.SourceSpan, unionSymbol, variant, argValues);
+        }
         else
         {
-            m_diagnostics.Add(new Diagnostic.Error(invoke.TargetExpression.SourceSpan, "can only invoke top level functions"));
+            m_diagnostics.Add(new Diagnostic.Error(invoke.TargetExpression.SourceSpan, "can't invoke this"));
             return null;
         }
     }
@@ -1633,6 +2135,12 @@ internal sealed class LayeChecker
                 }
                 else if (targetType is SymbolType.String)
                     return new LayeCst.SliceToString(value);
+            } break;
+
+            case SymbolType.UnionVariant variantType:
+            {
+                if (targetType is SymbolType.Union parentUnionType && parentUnionType.Variants.Contains(variantType))
+                    return new LayeCst.UnionVariantDowncast(value, parentUnionType);
             } break;
         }
 
