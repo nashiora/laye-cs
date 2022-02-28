@@ -806,6 +806,30 @@ internal sealed class LayeChecker
                 return new LayeCst.DynamicAppend(dynamicAppendStmt.SourceSpan, targetExpression, valueExpression);
             }
 
+            case LayeAst.DynamicFree dynamicFreeStmt:
+            {
+                var targetExpression = CheckExpression(dynamicFreeStmt.TargetExpression);
+                if (targetExpression is null)
+                {
+                    AssertHasErrors("checking dynamic append target");
+                    return null;
+                }
+
+                if (!targetExpression.CheckIsLValue())
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(dynamicFreeStmt.TargetExpression.SourceSpan, "target of dynamic free must be an l-value"));
+                    return null;
+                }
+
+                if (targetExpression.Type is not SymbolType.Dynamic dynamicType)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(dynamicFreeStmt.TargetExpression.SourceSpan, "target of dynamic free must be a dynamic"));
+                    return null;
+                }
+
+                return new LayeCst.DynamicFree(dynamicFreeStmt.SourceSpan, targetExpression);
+            }
+
             case LayeAst.Block blockStmt:
             {
                 PushScope(new SymbolTable(CurrentScope));

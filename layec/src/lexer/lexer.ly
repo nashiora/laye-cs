@@ -152,7 +152,9 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 		//if (trivia.kind == laye_trivia_kind::invalid) break;
 	}
 
-	return triviaList[:triviaList.length];
+	laye_trivia[] trivia = triviaList[:triviaList.length];
+	dynamic_free(triviaList);
+	return trivia;
 }
 
 laye_token[] lexer_read_laye_tokens(source source, diagnostic_bag *diagnostics)
@@ -182,12 +184,13 @@ laye_token[] lexer_read_laye_tokens(source source, diagnostic_bag *diagnostics)
 		assert(currentIndex != l.currentIndex, "internal Laye lexer error: call to `lexer_read_laye_token` did not consume any characters");
 		assert(token.kind != nil, "internal Laye lexer error: call to `lexer_read_laye_token` returned a nil-kinded token");
 
-		// TODO(local): check if the token is EoF token? don't append?
-
+		// TODO(local): check if the token is EoF token? don't append? EoF can have trivia that needs to be maintained somehow
 		dynamic_append(resultTokens, token);
 	}
 
-	return resultTokens[:resultTokens.length];
+	laye_token[] tokens = resultTokens[:resultTokens.length];
+	dynamic_free(resultTokens);
+	return tokens;
 }
 
 laye_token lexer_read_laye_token(lexer_data *l)

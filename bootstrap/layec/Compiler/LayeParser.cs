@@ -969,6 +969,37 @@ internal sealed class LayeParser
 
             return new LayeAst.DynamicAppend(SourceSpan.Combine(dynapKw, closep), target, value);
         }
+        else if (CheckKeyword(Keyword.Dynamic_Free, out var dynfrKw))
+        {
+            Advance(); // `dynamic_free`
+
+            if (!ExpectDelimiter(Delimiter.OpenParen))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `(` to open dynamic_free"));
+                return null;
+            }
+
+            var target = ReadExpression();
+            if (target is null)
+            {
+                AssertHasErrors("reading dynamic free target");
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.CloseParen, out var closep))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close dynamic_free"));
+                return null;
+            }
+
+            if (!ExpectDelimiter(Delimiter.SemiColon))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to terminate dynamic_free"));
+                return null;
+            }
+
+            return new LayeAst.DynamicFree(SourceSpan.Combine(dynfrKw, closep), target);
+        }
         else if (CheckKeyword(Keyword.Return, out var returnKw))
         {
             Advance(); // `return`

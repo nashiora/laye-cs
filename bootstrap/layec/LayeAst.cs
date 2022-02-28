@@ -229,6 +229,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ExpressionStatement(Expr Expression, LayeToken.Delimiter Terminator) : Stmt(Expression.SourceSpan);
     public sealed record class Assignment(Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan.Combine(TargetExpression, ValueExpression));
     public sealed record class DynamicAppend(SourceSpan SourceSpan, Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan);
+    public sealed record class DynamicFree(SourceSpan SourceSpan, Expr TargetExpression) : Stmt(SourceSpan);
 
     public sealed record class Block(LayeToken.Delimiter Start, LayeToken.Delimiter End, Stmt[] Body)
         : Stmt(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));

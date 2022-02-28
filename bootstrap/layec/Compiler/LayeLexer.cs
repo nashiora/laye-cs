@@ -461,6 +461,7 @@ internal sealed class LayeLexer
             case "nameof_variant": return new LayeToken.Keyword(span, Keyword.NameOf_Variant);
             case "offsetof": return new LayeToken.Keyword(span, Keyword.OffsetOf);
             case "dynamic_append": return new LayeToken.Keyword(span, Keyword.Dynamic_Append);
+            case "dynamic_free": return new LayeToken.Keyword(span, Keyword.Dynamic_Free);
 
             case "if": return new LayeToken.Keyword(span, Keyword.If);
             case "else": return new LayeToken.Keyword(span, Keyword.Else);

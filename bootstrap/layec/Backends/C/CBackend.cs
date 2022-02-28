@@ -887,6 +887,22 @@ int main(int argc, char** argv) {{
                 builder.AppendLine("->count++;");
             } break;
 
+            case LayeCst.DynamicFree dynFreeStmt:
+            {
+                string tempName = $"ly_dyn_{m_uniqueIndexCounter++}";
+
+                builder.Append("ly_dynamic_t* ");
+                builder.Append(tempName);
+                builder.Append(" = &(");
+                CompileExpression(builder, dynFreeStmt.TargetExpression);
+                builder.AppendLine(");");
+
+                builder.AppendLine($"free(({tempName})->data);");
+                builder.AppendLine($"({tempName})->data = NULL;");
+                builder.AppendLine($"({tempName})->count = 0;");
+                builder.AppendLine($"({tempName})->capacity = 0;");
+            } break;
+
             case LayeCst.Block blockStmt:
             {
                 builder.AppendLine("{");

@@ -106,6 +106,7 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class ExpressionStatement(Expr Expression) : Stmt(Expression.SourceSpan);
     public sealed record class Assignment(Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan.Combine(TargetExpression, ValueExpression));
     public sealed record class DynamicAppend(SourceSpan SourceSpan, Expr TargetExpression, Expr ValueExpression) : Stmt(SourceSpan);
+    public sealed record class DynamicFree(SourceSpan SourceSpan, Expr TargetExpression) : Stmt(SourceSpan);
 
     public sealed record class Block(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
     public sealed record class DeadCode(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
