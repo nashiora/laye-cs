@@ -85,6 +85,41 @@ internal sealed class LayeChecker
                             m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"`{sym.Name}` is already defined in this scope"));
                             return Array.Empty<LayeCstRoot>();
                         }
+
+                        if (sym is Symbol.Enum symEnum)
+                        {
+
+                            var variants = new (string Name, ulong Value)[enumDecl.Variants.Length];
+
+                            ulong variantValue = 0;
+                            for (int v = 0; v < enumDecl.Variants.Length; v++, variantValue++)
+                            {
+                                var variant = enumDecl.Variants[v];
+                                for (int j = 0; j < v; j++)
+                                {
+                                    if (variants[j].Name == variant.VariantName.Image)
+                                    {
+                                        m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"enum `{sym.Name}` already defines a variant `{variant.VariantName.Image}`"));
+                                        return Array.Empty<LayeCstRoot>();
+                                    }
+                                }
+
+                                if (variant.VariantValue is not null)
+                                {
+                                    if (variant.VariantValue is LayeAst.Integer variantValueInteger)
+                                        variantValue = variantValueInteger.Literal.LiteralValue;
+                                    else
+                                    {
+                                        m_diagnostics.Add(new Diagnostic.Error(variant.SourceSpan, "only constant unsigned integer literal values are supported as enum values"));
+                                        return Array.Empty<LayeCstRoot>();
+                                    }
+                                }
+
+                                variants[v] = (variant.VariantName.Image, variantValue);
+                            }
+
+                            sym.Type = new SymbolType.Enum((Symbol.Enum)sym, enumDecl.Name.Image, variants);
+                        }
                     } break;
 
                     case LayeAst.FunctionDeclaration fnDecl:
@@ -110,12 +145,12 @@ internal sealed class LayeChecker
 
         // create type symbols first, repeating until finished bc no dependency tree
         {
-            bool isTypeCreationComplete = true;
+            bool isTypeCreationComplete = false;
 
             uint attemptCount = 0;
             uint MaxAttemptCount = 1_000;
 
-            while (attemptCount < MaxAttemptCount)
+            while (attemptCount < MaxAttemptCount && !isTypeCreationComplete)
             {
                 isTypeCreationComplete = true;
                 attemptCount++;
@@ -132,7 +167,7 @@ internal sealed class LayeChecker
                             case LayeAst.StructDeclaration structDecl:
                             {
                                 var sym = (Symbol.Struct)syms[structDecl];
-                                if (sym.Type is not null) continue;
+                                if (sym.Type!.Resolved) continue;
 
                                 bool structBuildFailed = false;
 
@@ -165,16 +200,18 @@ internal sealed class LayeChecker
                                     break;
                                 }
 
-                                sym.Type = new SymbolType.Struct(structDecl.Name.Image, fields.ToArray());
+                                sym.Type!.Fields = fields.ToArray();
+                                sym.Type!.Resolved = true;
                             } break;
 
                             case LayeAst.EnumDeclaration enumDecl:
                             {
                                 var sym = syms[enumDecl];
-                                if (sym.Type is not null) continue;
 
                                 if (sym is Symbol.Union symUnion)
                                 {
+                                    if (symUnion.Type!.Resolved) continue;
+
                                     bool unionBuildFailed = false;
 
                                     var variants = new SymbolType.UnionVariant[enumDecl.Variants.Length];
@@ -222,7 +259,7 @@ internal sealed class LayeChecker
                                         }
 
                                         if (!unionBuildFailed)
-                                            variants[v] = new SymbolType.UnionVariant(variant.VariantName.Image, fields);
+                                            variants[v] = new SymbolType.UnionVariant(symUnion, variant.VariantName.Image, fields);
                                     }
 
                                     if (unionBuildFailed)
@@ -231,46 +268,23 @@ internal sealed class LayeChecker
                                         break;
                                     }
 
-                                    sym.Type = new SymbolType.Union((Symbol.Union)sym, enumDecl.Name.Image, variants);
+                                    symUnion.Type!.Variants = variants;
+                                    symUnion.Type!.Resolved = true;
                                 }
                                 else if (sym is Symbol.Enum symEnum)
                                 {
-                                    var variants = new (string Name, ulong Value)[enumDecl.Variants.Length];
-
-                                    ulong variantValue = 0;
-                                    for (int v = 0; v < enumDecl.Variants.Length; v++, variantValue++)
-                                    {
-                                        var variant = enumDecl.Variants[v];
-                                        for (int j = 0; j < v; j++)
-                                        {
-                                            if (variants[j].Name == variant.VariantName.Image)
-                                            {
-                                                m_diagnostics.Add(new Diagnostic.Error(enumDecl.Name.SourceSpan, $"enum `{sym.Name}` already defines a variant `{variant.VariantName.Image}`"));
-                                                return Array.Empty<LayeCstRoot>();
-                                            }
-                                        }
-
-                                        if (variant.VariantValue is not null)
-                                        {
-                                            if (variant.VariantValue is LayeAst.Integer variantValueInteger)
-                                                variantValue = variantValueInteger.Literal.LiteralValue;
-                                            else
-                                            {
-                                                m_diagnostics.Add(new Diagnostic.Error(variant.SourceSpan, "only constant unsigned integer literal values are supported as enum values"));
-                                                return Array.Empty<LayeCstRoot>();
-                                            }
-                                        }
-
-                                        variants[v] = (variant.VariantName.Image, variantValue);
-                                    }
-
-                                    sym.Type = new SymbolType.Enum((Symbol.Enum)sym, enumDecl.Name.Image, variants);
                                 }
                                 else throw new NotImplementedException("unreachable");
                             } break;
                         }
                     }
                 }
+            }
+
+            if (!isTypeCreationComplete)
+            {
+                Console.WriteLine("failed to resolve program types. this could be due to circular dependencies");
+                return Array.Empty<LayeCstRoot>();
             }
         }
 
@@ -889,6 +903,103 @@ internal sealed class LayeChecker
                 return new LayeCst.If(condition, passBody, failBody);
             }
 
+            case LayeAst.IfIs ifIsStmt:
+            {
+                var valueExpr = CheckExpression(ifIsStmt.ValueExpression);
+                if (valueExpr is null)
+                {
+                    AssertHasErrors("checking if is value");
+                    return null;
+                }
+
+                if (valueExpr.Type is not SymbolType.Union unionType)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(valueExpr.SourceSpan, $"if is statement requires the value being checked to be of a tagged union type, got {valueExpr.Type}"));
+                    return null;
+                }
+
+                var isType = unionType.Variants.Where(v => v.Name == ifIsStmt.VariantName.Image).SingleOrDefault();
+                if (isType is null)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(valueExpr.SourceSpan, $"variant {ifIsStmt.VariantName.Image} does not exist in tagged union type {unionType}"));
+                    return null;
+                }
+
+                if (isType is not SymbolType.UnionVariant isTypeVariant)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(valueExpr.SourceSpan, $"if is must check if a value is a tagged union variant, including nil, got {isType}"));
+                    return null;
+                }
+
+                var ifIsScope = new SymbolTable(CurrentScope);
+                PushScope(ifIsScope);
+
+                Symbol.Binding? bindingSymbol = null;
+                if (ifIsStmt.BoundName is not null)
+                {
+                    bindingSymbol = new Symbol.Binding(ifIsStmt.BoundName.Image, isType);
+                    ifIsScope.AddSymbol(bindingSymbol);
+                }
+
+                var passBody = CheckStatement(ifIsStmt.IfBody);
+                if (passBody is null)
+                {
+                    AssertHasErrors("checking if is pass body");
+                    return null;
+                }
+
+                LayeCst.Stmt? failBody = null;
+                if (ifIsStmt.ElseBody is not null)
+                {
+                    failBody = CheckStatement(ifIsStmt.ElseBody);
+                    if (failBody is null)
+                    {
+                        AssertHasErrors("checking if is fail body");
+                        return null;
+                    }
+                }
+
+                PopScope();
+
+                return new LayeCst.IfIs(valueExpr, ifIsStmt.IsNot, isTypeVariant, bindingSymbol, passBody, failBody);
+            }
+
+            case LayeAst.IfIsNil ifIsNilStmt:
+            {
+                var valueExpr = CheckExpression(ifIsNilStmt.ValueExpression);
+                if (valueExpr is null)
+                {
+                    AssertHasErrors("checking if is nil value");
+                    return null;
+                }
+
+                if (valueExpr.Type is not SymbolType.Union unionType)
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(valueExpr.SourceSpan, $"if is nil statement requires the value being checked to be of a tagged union type, got {valueExpr.Type}"));
+                    return null;
+                }
+
+                var passBody = CheckStatement(ifIsNilStmt.IfBody);
+                if (passBody is null)
+                {
+                    AssertHasErrors("checking if is nil pass body");
+                    return null;
+                }
+
+                LayeCst.Stmt? failBody = null;
+                if (ifIsNilStmt.ElseBody is not null)
+                {
+                    failBody = CheckStatement(ifIsNilStmt.ElseBody);
+                    if (failBody is null)
+                    {
+                        AssertHasErrors("checking if is nil fail body");
+                        return null;
+                    }
+                }
+
+                return new LayeCst.IfIsNil(valueExpr, ifIsNilStmt.IsNot, passBody, failBody);
+            }
+
             case LayeAst.While whileStmt:
             {
                 var condition = CheckExpression(whileStmt.Condition);
@@ -1180,6 +1291,20 @@ internal sealed class LayeChecker
                         if (fieldType is null)
                         {
                             m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"struct `{structType.Name}` does not contain a field named `{indexName}`"));
+                            return null;
+                        }
+
+                        return new LayeCst.NamedIndex(target, namedIndexExpr.Name, fieldType);
+                    }
+
+                    case SymbolType.UnionVariant variantType:
+                    {
+                        var fields = variantType.Fields;
+
+                        var fieldType = fields.Where(f => f.Name == indexName).Select(f => f.Type).SingleOrDefault();
+                        if (fieldType is null)
+                        {
+                            m_diagnostics.Add(new Diagnostic.Error(expression.SourceSpan, $"tagged union variant `{variantType.Name}` does not contain a field named `{indexName}`"));
                             return null;
                         }
 
@@ -1881,19 +2006,85 @@ internal sealed class LayeChecker
 
     private LayeCst.Expr? CheckInvoke(LayeAst.Invoke invoke)
     {
-        var argValues = new LayeCst.Expr[invoke.Arguments.Length];
-        for (int i = 0; i < argValues.Length; i++)
+        bool CheckInvokeArguments(SymbolType[] contexts, VarArgsKind varArgs, out LayeCst.Expr[] argValues)
         {
-            var arg = invoke.Arguments[i];
+            argValues = new LayeCst.Expr[invoke.Arguments.Length];
 
-            var argValue = CheckExpression(arg);
-            if (argValue is null)
+            switch (varArgs)
             {
-                AssertHasErrors("failing to check invocation argument");
-                return null;
+                case VarArgsKind.None:
+                {
+                    if (contexts.Length != argValues.Length)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(invoke.SourceSpan, $"expected {contexts.Length} arguments, got {argValues.Length}"));
+                        return false;
+                    }
+                } break;
+
+                case VarArgsKind.C:
+                {
+                    if (contexts.Length > argValues.Length)
+                    {
+                        m_diagnostics.Add(new Diagnostic.Error(invoke.SourceSpan, $"expected at least {contexts.Length} arguments with C-style varargs, got {argValues.Length}"));
+                        return false;
+                    }
+                } break;
+
+                default:
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(invoke.SourceSpan, $"internal compiler error: varargs kind {varArgs} not handled in checker"));
+                    return false;
+                }
             }
 
-            argValues[i] = argValue;
+            for (int i = 0; i < argValues.Length; i++)
+            {
+                var arg = invoke.Arguments[i];
+
+                if (i < contexts.Length) PushTypeContext(contexts[i]);
+                var argValue = CheckExpression(arg);
+                if (i < contexts.Length) PopTypeContext();
+
+                if (argValue is null)
+                {
+                    AssertHasErrors("failing to check invocation argument");
+                    return false;
+                }
+
+                if (i < contexts.Length)
+                {
+                    if (CheckImplicitTypeCast(argValue, contexts[i]) is not LayeCst.Expr argCast)
+                    {
+                        AssertHasErrors("failing to convert argument to the correct type");
+                        return false;
+                    }
+
+                    argValue = argCast;
+                }
+                else
+                {
+                    if (varArgs == VarArgsKind.C)
+                    {
+                        if (argValue.Type is SymbolType.UntypedInteger unint)
+                        {
+                            var _int = argValue as LayeCst.Integer;
+                            Debug.Assert(_int is not null, "untyped integer found in non literal expression");
+
+                            argValue = new LayeCst.Integer(_int.Literal, new SymbolType.Integer(unint.Signed));
+                        }
+                        else if (argValue.Type is SymbolType.SizedInteger sint && sint.BitCount < 32)
+                            argValue = new LayeCst.TypeCast(argValue.SourceSpan, argValue, new SymbolType.SizedInteger(sint.Signed, 32));
+#if false
+                        else if (argValue.Type is SymbolType.SizedFloat sfloat && sfloat.BitCount < 64)
+                            argValue = new LayeCst.TypeCast(argValue.SourceSpan, argValue, new SymbolType.SizedFloat(64));
+#endif
+                    }
+                }
+
+                argValues[i] = argValue;
+            }
+
+            return true;
         }
 
         if (invoke.TargetExpression is LayeAst.NameLookup targetNameLookup)
@@ -1914,68 +2105,10 @@ internal sealed class LayeChecker
             Debug.Assert(fnSymbol.Type is not null, "function declaration was not yet type checked");
             var targetParams = fnSymbol.Type.Parameters;
 
-            switch (fnSymbol.Type.VarArgs)
+            if (!CheckInvokeArguments(targetParams.Select(p => p.Type).ToArray(), fnSymbol.Type.VarArgs, out var argValues))
             {
-                case VarArgsKind.None:
-                {
-                    if (targetParams.Length != argValues.Length)
-                    {
-                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected {targetParams.Length} arguments to function `{targetName}`, got {argValues.Length}"));
-                        return null;
-                    }
-                } break;
-
-                case VarArgsKind.C:
-                {
-                    if (targetParams.Length > argValues.Length)
-                    {
-                        m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"expected at least {targetParams.Length} arguments to C-style varargs function `{targetName}`, got {argValues.Length}"));
-                        return null;
-                    }
-                } break;
-
-                default:
-                {
-                    m_diagnostics.Add(new Diagnostic.Error(targetNameLookup.SourceSpan, $"internal compiler error: varargs kind {fnSymbol.Type.VarArgs} not handled in checker"));
-                    return null;
-                }
-            }
-
-            int argsToCheckCount = Math.Min(argValues.Length, targetParams.Length);
-            for (int i = 0; i < argsToCheckCount; i++)
-            {
-                var arg = argValues[i];
-                var param = targetParams[i];
-
-                if (CheckImplicitTypeCast(arg, param.Type) is not LayeCst.Expr argCast)
-                {
-                    AssertHasErrors("failing to convert argument to the correct type");
-                    return null;
-                }
-
-                argValues[i] = argCast;
-            }
-
-            if (fnSymbol.Type.VarArgs == VarArgsKind.C)
-            {
-                for (int i = argsToCheckCount; i < argValues.Length; i++)
-                {
-                    var arg = argValues[i];
-
-                    if (arg.Type is SymbolType.UntypedInteger unint)
-                    {
-                        var _int = arg as LayeCst.Integer;
-                        Debug.Assert(_int is not null, "untyped integer found in non literal expression");
-
-                        argValues[i] = new LayeCst.Integer(_int.Literal, new SymbolType.Integer(unint.Signed));
-                    }
-                    else if (arg.Type is SymbolType.SizedInteger sint && sint.BitCount < 32)
-                        argValues[i] = new LayeCst.TypeCast(arg.SourceSpan, arg, new SymbolType.SizedInteger(sint.Signed, 32));
-#if false
-                    else if (arg.Type is SymbolType.SizedFloat sfloat && sfloat.BitCount < 64)
-                        argValues[i] = new LayeCst.TypeCast(arg.SourceSpan, arg, new SymbolType.SizedFloat(64));
-#endif
-                }
+                AssertHasErrors("checking function invoke arguments");
+                return null;
             }
 
             return new LayeCst.InvokeFunction(invoke.SourceSpan, fnSymbol, argValues.ToArray());
@@ -2039,24 +2172,16 @@ internal sealed class LayeChecker
 
             var variant = maybeVariant.Single();
 
-            if (variant.Fields.Length != argValues.Length)
+            if (variant.Fields.Length != invoke.Arguments.Length)
             {
-                m_diagnostics.Add(new Diagnostic.Error(joinedPath.LookupPart.SourceSpan, $"variant `{lookupName}` in enum `{unionSymbol.Name}` requires exactly {variant.Fields.Length} arguments, got {argValues.Length}"));
+                m_diagnostics.Add(new Diagnostic.Error(joinedPath.LookupPart.SourceSpan, $"variant `{lookupName}` in enum `{unionSymbol.Name}` requires exactly {variant.Fields.Length} arguments, got {invoke.Arguments.Length}"));
                 return null;
             }
 
-            for (int i = 0; i < argValues.Length; i++)
+            if (!CheckInvokeArguments(variant.Fields.Select(f => f.Type).ToArray(), VarArgsKind.None, out var argValues))
             {
-                var arg = argValues[i];
-                var param = variant.Fields[i];
-
-                if (CheckImplicitTypeCast(arg, param.Type) is not LayeCst.Expr argCast)
-                {
-                    AssertHasErrors("failing to convert argument to the correct type");
-                    return null;
-                }
-
-                argValues[i] = argCast;
+                AssertHasErrors("checking function invoke arguments");
+                return null;
             }
 
             return new LayeCst.LoadUnionVariant(invoke.SourceSpan, unionSymbol, variant, argValues);

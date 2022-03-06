@@ -149,6 +149,7 @@ internal enum Keyword
     Not,
 
     Cast,
+    Is,
     SizeOf,
     NameOf,
     NameOf_Variant,

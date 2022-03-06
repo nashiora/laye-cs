@@ -398,6 +398,8 @@ int main(int argc, char** argv) {{
                 builder.Append(m_cTypeNames[unionType]);
             } break;
 
+            case SymbolType.UnionVariant unionVariantType: AppendCType(builder, unionVariantType.UnionSymbol.Type!); break;
+
             default:
             {
                 Console.WriteLine($"internal compiler error: writing type {type} not supported in C backend");
@@ -618,7 +620,7 @@ int main(int argc, char** argv) {{
                 unionBuilder.AppendLine("    case 0: return LYSTR_STRING(\"nil\", 3);");
                 for (int i = 0; i < unionType.Variants.Length; i++)
                 {
-                    var (variantName, variantValue) = unionType.Variants[i];
+                    var (_, variantName, variantValue) = unionType.Variants[i];
                     unionBuilder.Append("    case ");
                     unionBuilder.Append(unionEnumName);
                     unionBuilder.Append("__");
@@ -964,6 +966,80 @@ int main(int argc, char** argv) {{
                 }
             } break;
 
+            case LayeCst.IfIs ifIsStmt:
+            {
+                var unionSymbol = ifIsStmt.VariantType.UnionSymbol;
+
+                string unionTypeName = m_cTypeNames[unionSymbol.Type!];
+                string variantKindName = $"{unionTypeName}_Kinds__{ifIsStmt.VariantType.Name}";
+
+                string valueName = $"ifis_value_{m_uniqueIndexCounter++}";
+                if (ifIsStmt.Binding is not null)
+                    m_symbolNames[ifIsStmt.Binding] = valueName;
+
+                builder.Append("{ ");
+                AppendCType(builder, ifIsStmt.VariantType);
+                builder.Append(' ');
+                builder.Append(valueName);
+                builder.Append(" = ");
+                CompileExpression(builder, ifIsStmt.ValueExpression);
+                builder.AppendLine(";");
+
+                m_tabs++;
+                builder.Append("if (");
+                builder.Append(valueName);
+                builder.Append(".kind");
+                if (ifIsStmt.IsNot)
+                    builder.Append(" != ");
+                else builder.Append(" == ");
+                builder.Append(variantKindName);
+                builder.AppendLine(")");
+
+                bool isBlockBody = ifIsStmt.IfBody is LayeCst.Block;
+
+                if (!isBlockBody) m_tabs++;
+                CompileStatement(builder, ifIsStmt.IfBody);
+                if (!isBlockBody) m_tabs--;
+
+                if (ifIsStmt.ElseBody is not null)
+                {
+                    AppendTabs(builder);
+                    builder.Append("else");
+
+                    int tabs = m_tabs;
+                    if (ifIsStmt.ElseBody is LayeCst.If)
+                    {
+                        //m_tabs = 0;
+                        builder.Append(' ');
+                        CompileStatement(builder, ifIsStmt.ElseBody);
+                        //m_tabs = tabs;
+                    }
+                    else
+                    {
+                        isBlockBody = ifIsStmt.ElseBody is LayeCst.Block;
+                        if (!isBlockBody)
+                        {
+                            m_tabs++;
+                            builder.AppendLine();
+                        }
+                        else
+                        {
+                            m_tabs = 0;
+                            builder.Append(' ');
+                        }
+
+                        CompileStatement(builder, ifIsStmt.ElseBody);
+                        if (!isBlockBody)
+                            m_tabs--;
+                        else m_tabs = tabs;
+                    }
+                }
+
+                m_tabs--;
+                AppendTabs(builder);
+                builder.AppendLine("}");
+            } break;
+
             case LayeCst.While whileStmt:
             {
                 if (whileStmt.ElseBody is not null)
@@ -1174,6 +1250,12 @@ int main(int argc, char** argv) {{
                 builder.Append('(');
                 CompileExpression(builder, namedExpr.TargetExpression);
                 builder.Append(").");
+                if (namedExpr.TargetExpression.Type is SymbolType.UnionVariant variantType)
+                {
+                    builder.Append("variants.");
+                    builder.Append(variantType.Name);
+                    builder.Append('.');
+                }
                 // TODO(local): we have symbol names, but we need something for this as well (or to make these symbols instead)
                 builder.Append(namedExpr.Name.Image);
             } break;

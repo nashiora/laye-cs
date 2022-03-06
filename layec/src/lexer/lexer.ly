@@ -107,13 +107,13 @@ void lexer_advance(lexer_data *l)
 	else l.currentColumn = l.currentColumn + 1;
 }
 
-laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
+syntax_trivia[] lexer_get_syntax_trivia(lexer_data *l, bool untilEndOfLine)
 {
-	laye_trivia[dynamic] triviaList;
+	syntax_trivia[dynamic] triviaList;
 
 	while (not lexer_is_eof(*l))
 	{
-		laye_trivia trivia;
+		syntax_trivia trivia;
 		source_location startLocation = lexer_current_location(*l);
 
 		i32 c = lexer_current_rune(*l);
@@ -179,29 +179,29 @@ laye_trivia[] lexer_get_laye_trivia(lexer_data *l, bool untilEndOfLine)
 			trivia.sourceSpan = source_span_create(startLocation, endLocation);
 
 			if (nesting > 0)
-				diagnostics_add_error(l.diagnostics, source_span_create(startLocation, endLocation), "unfinished block comment");
+				diagnostics_add_error(l.diagnostics, ::trivia(trivia), "unfinished block comment");
 			else trivia.kind = ::comment_block;
 		}
 		else break;
 
 		dynamic_append(triviaList, trivia);
-		//if (trivia.kind == laye_trivia_kind::invalid) break;
+		//if (trivia.kind == syntax_trivia_kind::invalid) break;
 	}
 
-	laye_trivia[] trivia = triviaList[:triviaList.length];
+	syntax_trivia[] trivia = triviaList[:triviaList.length];
 	dynamic_free(triviaList);
 	return trivia;
 }
 
-laye_token[] lexer_read_laye_tokens(source source, diagnostic_bag *diagnostics)
+syntax_token[] lexer_read_laye_tokens(source source, diagnostic_bag *diagnostics)
 {
 	if (not source.isValid)
 	{
-		laye_token[] dummyResult;
+		syntax_token[] dummyResult;
 		return dummyResult;
 	}
 
-	laye_token[dynamic] resultTokens;
+	syntax_token[dynamic] resultTokens;
 
 	lexer_data l;
 	l.diagnostics = diagnostics;
@@ -214,28 +214,28 @@ laye_token[] lexer_read_laye_tokens(source source, diagnostic_bag *diagnostics)
 		//printf("  reading token...%c", 10);
 
 		uint currentIndex = l.currentIndex;
-		laye_token token = lexer_read_laye_token(&l);
+		syntax_token token = lexer_read_laye_token(&l);
 
 		// if we didn't advance, panic
-		assert(currentIndex != l.currentIndex, "internal Laye lexer error: call to `lexer_read_laye_token` did not consume any characters");
-		assert(token.kind != nil, "internal Laye lexer error: call to `lexer_read_laye_token` returned a nil-kinded token");
+		assert(currentIndex != l.currentIndex, "internal Laye lexer error: call to `lexer_read_syntax_token` did not consume any characters");
+		assert(token.kind != nil, "internal Laye lexer error: call to `lexer_read_syntax_token` returned a nil-kinded token");
 
 		// TODO(local): check if the token is EoF token? don't append? EoF can have trivia that needs to be maintained somehow
 		dynamic_append(resultTokens, token);
 	}
 
-	laye_token[] tokens = resultTokens[:resultTokens.length];
+	syntax_token[] tokens = resultTokens[:resultTokens.length];
 	dynamic_free(resultTokens);
 	return tokens;
 }
 
-laye_token lexer_read_laye_token(lexer_data *l)
+syntax_token lexer_read_laye_token(lexer_data *l)
 {
-	assert(not lexer_is_eof(*l), "lexer_read_laye_token called when at EoF");
+	assert(not lexer_is_eof(*l), "lexer_read_syntax_token called when at EoF");
 
-	laye_token token;
+	syntax_token token;
 
-	laye_trivia[] leadingTrivia = lexer_get_laye_trivia(l, false);
+	syntax_trivia[] leadingTrivia = lexer_get_syntax_trivia(l, false);
 	token.leadingTrivia = leadingTrivia;
 
 	i32 c = lexer_current_rune(*l);
@@ -273,7 +273,10 @@ laye_token lexer_read_laye_token(lexer_data *l)
 		else
 		{
 			token.kind = ::poison_token;
-			diagnostics_add_error(l.diagnostics, source_span_create(startLocation, lexer_current_location(*l)), "invalid token `!` (did you mean `not`?)");
+			// set the source span here, because we're copying it into the diagnostic
+			token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+
+			diagnostics_add_error(l.diagnostics, ::token(token), "invalid token `!` in Laye source text (did you mean `not`?)");
 		}
 	}
 	else if (c == 34 /* " */)
@@ -290,11 +293,11 @@ laye_token lexer_read_laye_token(lexer_data *l)
 		{
 			lexer_advance(l);
 			token.kind = ::poison_token;
+			// set the source span here, because we're copying it into the diagnostic
+			token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
 
-			source_span ss = source_span_create(startLocation, lexer_current_location(*l));
-
-			diagnostics_add_warning(l.diagnostics, ss, "invalid token `&&` (did you mean `and`?)");
-			diagnostics_add_info(l.diagnostics, ss, "`&` can be either the bitwise and infix operator or the address-of prefix operator; `&&` could only legally appear as taking an address of an address inline, which is incredibly unlikely and must instead be written as `&(&variable)` if needed to avoid the much more common mistake of using `&&` as the logical and infix operator");
+			diagnostics_add_warning(l.diagnostics, ::token(token), "invalid token `&&` in Laye source text (did you mean `and`?)");
+			diagnostics_add_info(l.diagnostics, ::token(token), "`&` can be either the bitwise and infix operator or the address-of prefix operator; `&&` could only legally appear as taking an address of an address inline, which is incredibly unlikely and must instead be written as `&(&variable)` if needed to avoid the much more common mistake of using `&&` as the logical and infix operator");
 		}
 		else token.kind = ::amp;
 	}
@@ -418,8 +421,8 @@ laye_token lexer_read_laye_token(lexer_data *l)
 
 			source_span ss = source_span_create(startLocation, lexer_current_location(*l));
 
-			diagnostics_add_warning(l.diagnostics, ss, "invalid token `||` (did you mean `or`?)");
-			diagnostics_add_info(l.diagnostics, ss, "`|` is the bitwise or infix operator; `||` could never legally appear in an expression");
+			diagnostics_add_warning(l.diagnostics, ::span(ss), "invalid token `||` (did you mean `or`?)");
+			diagnostics_add_info(l.diagnostics, ::span(ss), "`|` is the bitwise or infix operator; `||` could never legally appear in an expression");
 		}
 		else token.kind = ::pipe;
 	}
@@ -434,6 +437,8 @@ laye_token lexer_read_laye_token(lexer_data *l)
 		token.kind = ::tilde;
 	}
 
+	token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+
 	if (token.kind == nil)
 	{
 		lexer_advance(l);
@@ -445,22 +450,24 @@ laye_token lexer_read_laye_token(lexer_data *l)
 		string_builder_append_uint_hexn(&errorBuilder, cast(uint) c, 4);
 		string_builder_append_string(&errorBuilder, ") in lexer");
 
-		diagnostics_add_error(l.diagnostics, source_span_create(startLocation, lexer_current_location(*l)), string_builder_to_string(errorBuilder));
+		diagnostics_add_error(l.diagnostics, ::token(token), string_builder_to_string(errorBuilder));
 
 		string_builder_free(&errorBuilder);
 	}
 
-	token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+	// any diagnostics generated before this point will not have trailing trivia, which is a bit said but totally usable.
+	// we'd have to heap-allocate each token, which we may do in the future if we can custom-allocate into a big arena, for example.
+	// i'd still want to avoid the extra pointer walk, but if we need more reference-like semantics in the lexer in the future it's not a terible idea
 
-	laye_trivia[] trailingTrivia = lexer_get_laye_trivia(l, true);
+	syntax_trivia[] trailingTrivia = lexer_get_syntax_trivia(l, true);
 	token.trailingTrivia = trailingTrivia;
 
 	return token;
 }
 
-void lexer_read_laye_identifier_or_number(lexer_data *l, laye_token *token)
+void lexer_read_laye_identifier_or_number(lexer_data *l, syntax_token *token)
 {
-	assert(rune_is_laye_identifier_part(lexer_current_rune(*l)), "lexer_read_laye_token called without identifier char");
+	assert(rune_is_laye_identifier_part(lexer_current_rune(*l)), "lexer_read_syntax_token called without identifier char");
 
 	i32 lastRune = lexer_current_rune(*l);
 
@@ -500,7 +507,7 @@ void lexer_read_laye_identifier_or_number(lexer_data *l, laye_token *token)
 	}
 	else
 	{
-		// the main lexer_read_laye_token function will calculate the sourceSpan for us, but we need it here to get the identifier value
+		// the main lexer_read_syntax_token function will calculate the sourceSpan for us, but we need it here to get the identifier value
 
 		source_location endLocation = lexer_current_location(*l);
 		token.sourceSpan = source_span_create(startLocation, endLocation);
@@ -510,7 +517,7 @@ void lexer_read_laye_identifier_or_number(lexer_data *l, laye_token *token)
 	}
 }
 
-void lexer_read_laye_radix_integer_from_delimiter(lexer_data *l, laye_token *token, source_location startLocation, u64 radix)
+void lexer_read_laye_radix_integer_from_delimiter(lexer_data *l, syntax_token *token, source_location startLocation, u64 radix)
 {
 	panic("TODO(local): lexer_read_laye_radix_integer_from_delimiter is unimplemented");
 }
@@ -522,20 +529,22 @@ i32 lexer_read_laye_escape_sequence_to_rune(lexer_data *l)
 	assert(lexer_current_rune(*l) == 92 /* \ */, "lexer_read_laye_escape_to_rune called without escape char");
 	lexer_advance(l); // `\`
 
-	if (lexer_current_rune(*l) == 85 /* U */ and lexer_peek_rune(*l) == 43 /* + */)
+	i32 c = lexer_current_rune(*l);
+
+	if (c == 85 /* U */)
 	{
 		lexer_advance(l); // `U`
-		lexer_advance(l); // `+`
 
 		i32 codepointValue = 0;
 
 		{
 			uint i = 0;
-			while (i < 4)
+			while (i < 6)
 			{
 				if (not rune_is_laye_digit_in_radix(lexer_current_rune(*l), 16))
 				{
-					diagnostics_add_error(l.diagnostics, source_span_create(startLocation, lexer_current_location(*l)), "expected 4 digits for unicode escape sequence");
+					source_span ss = source_span_create(startLocation, lexer_current_location(*l));
+					diagnostics_add_error(l.diagnostics, ::span(ss), "expected 6 hex digits for full range unicode escape sequence");
 					break;
 				}
 
@@ -550,18 +559,126 @@ i32 lexer_read_laye_escape_sequence_to_rune(lexer_data *l)
 
 		return codepointValue;
 	}
+	else if (c == 117 /* u */)
+	{
+		lexer_advance(l); // `u`
+
+		i32 codepointValue = 0;
+
+		{
+			uint i = 0;
+			while (i < 4)
+			{
+				if (not rune_is_laye_digit_in_radix(lexer_current_rune(*l), 16))
+				{
+					source_span ss = source_span_create(startLocation, lexer_current_location(*l));
+					diagnostics_add_error(l.diagnostics, ::span(ss), "expected 4 hex digits for base range unicode escape sequence");
+					break;
+				}
+
+				codepointValue = codepointValue * 16;
+				codepointValue = codepointValue + cast(i32) rune_laye_digit_value_in_radix(lexer_current_rune(*l), 16);
+
+				lexer_advance(l); // base 16 digit
+
+				i = i + 1;
+			}
+		}
+
+		return codepointValue;
+	}
+	else if (c == 120 /* x */)
+	{
+		lexer_advance(l); // `x`
+
+		i32 codepointValue = 0;
+
+		{
+			uint i = 0;
+			while (i < 2)
+			{
+				if (not rune_is_laye_digit_in_radix(lexer_current_rune(*l), 16))
+				{
+					source_span ss = source_span_create(startLocation, lexer_current_location(*l));
+					diagnostics_add_error(l.diagnostics, ::span(ss), "expected 2 digits for hex escape sequence");
+					break;
+				}
+
+				codepointValue = codepointValue * 16;
+				codepointValue = codepointValue + cast(i32) rune_laye_digit_value_in_radix(lexer_current_rune(*l), 16);
+
+				lexer_advance(l); // base 16 digit
+
+				i = i + 1;
+			}
+		}
+
+		return codepointValue;
+	}
+	else if (c == 97 /* a */)
+	{
+		lexer_advance(l); // `a`
+		return 7 /* \a */;
+	}
+	else if (c == 98 /* b */)
+	{
+		lexer_advance(l); // `b`
+		return 8 /* \b */;
+	}
+	else if (c == 116 /* t */)
+	{
+		lexer_advance(l); // `t`
+		return 9 /* \t */;
+	}
+	else if (c == 110 /* n */)
+	{
+		lexer_advance(l); // `n`
+		return 10 /* \n */;
+	}
+	else if (c == 118 /* v */)
+	{
+		lexer_advance(l); // `v`
+		return 11 /* \v */;
+	}
+	else if (c == 102 /* f */)
+	{
+		lexer_advance(l); // `f`
+		return 12 /* \f */;
+	}
+	else if (c == 114 /* r */)
+	{
+		lexer_advance(l); // `r`
+		return 13 /* \r */;
+	}
+	else if (c == 34 /* " */)
+	{
+		lexer_advance(l); // `"`
+		return 34 /* " */;
+	}
+	else if (c == 39 /* ' */)
+	{
+		lexer_advance(l); // `'`
+		return 39 /* ' */;
+	}
+	else if (c == 92 /* \ */)
+	{
+		lexer_advance(l); // `\`
+		return 92 /* \ */;
+	}
 	else
 	{
 		i32 result = lexer_current_rune(*l);
 
 		lexer_advance(l); // next character, unrecognized
-		diagnostics_add_error(l.diagnostics, source_span_create(startLocation, lexer_current_location(*l)), "unrecognized escape sequence");
+		// TODO(local): create a flag to treat unknown escapes as non-errors
+		source_span ss = source_span_create(startLocation, lexer_current_location(*l));
+		diagnostics_add_error(l.diagnostics, ::span(ss), "unrecognized escape sequence");
 
 		return result;
 	}
 }
 
-void lexer_read_laye_string(lexer_data *l, laye_token *token)
+void lexer_read_laye_string(lexer_data *l, syntax_token *token)
 {
 	assert(lexer_current_rune(*l) == 34 /* " */, "lexer_read_laye_string called without quote char");
 	lexer_advance(l); // `"`
@@ -590,7 +707,7 @@ void lexer_read_laye_string(lexer_data *l, laye_token *token)
 		lexer_advance(l); // `"`
 		string stringValue = string_builder_to_string(sb);
 		token.kind = ::literal_string(stringValue);
-		printf(">> %.*s%c", stringValue.length, stringValue.data, 10);
+		//printf(">> %.*s%c", stringValue.length, stringValue.data, 10);
 		string_builder_free(&sb);
 	}
 	else

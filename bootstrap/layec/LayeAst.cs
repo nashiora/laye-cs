@@ -235,6 +235,8 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
         : Stmt(new SourceSpan(Start.SourceSpan.StartLocation, End.SourceSpan.EndLocation));
 
     public sealed record class If(Expr Condition, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, IfBody, ElseBody));
+    public sealed record class IfIs(Expr ValueExpression, bool IsNot, LayeToken.Identifier VariantName, LayeToken.Identifier? BoundName, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(ValueExpression, IfBody, ElseBody));
+    public sealed record class IfIsNil(Expr ValueExpression, bool IsNot, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(ValueExpression, IfBody, ElseBody));
     public sealed record class While(Expr Condition, Stmt WhileBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, WhileBody, ElseBody));
     public sealed record class CFor(Stmt? Initializer, Expr? Condition, Stmt? Iterator, Stmt ForBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Initializer, Condition, Iterator, ForBody, ElseBody));
 

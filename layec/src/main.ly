@@ -9,22 +9,22 @@
 [ ] Operator expressions
     [T] Infix ops (+, -, *, /, %, <<, >>, &, |, ~, <, >, ==, !=, <=, >=, and, or)
     [T] Prefix ops (&, *, -, not)
-    [ ] Explicit type casts
+    [X] Explicit type casts
 [ ] Structure operations
     [X] Size of structure `sizeof(Type)`
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
     [ ] Structural initializers
     [X] Zero initializers
-[ ] Branch structures
+[!] Branch structures
     [X] If/else `if (expr) { } else if (expr) { } else { }
     [X] While `while (expr) { } else { }`
     [ ] C-style For `for (binding or expr; expr; expr) { } else { }`
-    [ ] Switch statements `switch (expr) { case Constant: <scoped exprs, no break needed> default: <same> }`
+    [!] Switch statements `switch (expr) { case Constant: <scoped exprs, no break needed> default: <same> }`
 [ ] Tagged unions
-    [ ] Enum syntax `enum EnumName { VariantName }` `enum EnumName { VariantName(int VariantField) }`
-    [ ] Switch statement support for enums `switch (expr) { case EnumName::VariantName: <scoped exprs, no break needed> case ::VariantName <same> default: <same> }`
-    [ ] Union syntax (optional) `enum EnumName { VariantName }` `enum EnumName { VariantName(int VariantField) }`
-    [ ] Switch statement support for unions (optional) `switch (expr) { case UnionName::VariantName: <scoped exprs, no break needed> default: <same> }`
+    [X] Enum syntax `enum EnumName { VariantName }` `enum EnumName { VariantName(int VariantField) }`
+    [!] Switch statement support for enums `switch (expr) { case EnumName::VariantName: <scoped exprs, no break needed> case ::VariantName <same> default: <same> }`
+    [X] Union syntax (optional) `enum EnumName { VariantName }` `enum EnumName { VariantName(int VariantField) }`
+    [!] Switch statement support for unions (optional) `switch (expr) { case UnionName::VariantName: <scoped exprs, no break needed> default: <same> }`
 
 */
 
@@ -78,7 +78,7 @@ void laye_main(string[] args)
         return;
     }
     
-    laye_token[] sourceTokens = lexer_read_laye_tokens(sourceFile, &diagnostics);
+    syntax_token[] sourceTokens = lexer_read_laye_tokens(sourceFile, &diagnostics);
 
     printf("read %llu tokens from file successfully%c", sourceTokens.length, 10);
     diagnostics_print(diagnostics);
@@ -88,7 +88,7 @@ void laye_main(string[] args)
         uint i = 0;
         while (i < sourceTokens.length)
         {
-            laye_token token = sourceTokens[i];
+            syntax_token token = sourceTokens[i];
 
             string tokenLocationString = source_location_to_string(token.sourceSpan.startLocation);
             string tokenString = source_span_to_string(token.sourceSpan);
@@ -114,7 +114,7 @@ void diagnostics_print(diagnostic_bag b)
         {
             diagnostic d = b.diagnostics[i];
 
-            string locationString = source_location_to_string(d.sourceSpan.startLocation);
+            string locationString = source_location_to_string(diagnostic_source_span_get(d).startLocation);
             string kindString = nameof_variant(d.kind);
 
             printf("%.*s: %.*s: %.*s%c",

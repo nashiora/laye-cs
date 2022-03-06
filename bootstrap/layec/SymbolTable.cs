@@ -91,7 +91,7 @@ internal abstract class Symbol
     public sealed class Struct : Symbol<SymbolType.Struct>
     {
         public Struct(string name)
-            : base(name)
+            : base(name, new SymbolType.Struct(name, Array.Empty<(SymbolType, string)>()))
         {
         }
 
@@ -117,8 +117,9 @@ internal abstract class Symbol
     public sealed class Union : Symbol<SymbolType.Union>
     {
         public Union(string name)
-            : base(name)
+            : base(name, null)
         {
+            Type = new SymbolType.Union(this, name, Array.Empty<SymbolType.UnionVariant>());
         }
 
         public Union(string name, SymbolType.Union? type)
@@ -239,11 +240,36 @@ internal abstract record class SymbolType(string Name)
         : SymbolType(FunctionTypeToString(Name, CallingConvention, ReturnType, Parameters.Select(p => $"{p.Type} {p.Name}").ToArray(), VarArgs));
     public sealed record class FunctionPointer(CallingConvention CallingConvention, SymbolType ReturnType, SymbolType[] ParameterTypes, VarArgsKind VarArgs)
         : SymbolType(FunctionTypeToString(null, CallingConvention, ReturnType, ParameterTypes.Select(p => p.Name).ToArray(), VarArgs));
-    public sealed record class Struct(string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
+    public sealed record class Struct : SymbolType
+    {
+        public bool Resolved { get; set; } = false;
+
+        public (SymbolType Type, string Name)[] Fields { get; set; }
+
+        public Struct(string name, (SymbolType Type, string Name)[] fields)
+            : base(name)
+        {
+            Fields = fields;
+        }
+    }
+
     public sealed record class Enum(Symbol.Enum EnumSymbol, string Name, (string Name, ulong Value)[] Variants) : SymbolType(Name);
 
-    public sealed record class UnionVariant(string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
-    public sealed record class Union(Symbol.Union UnionSymbol, string Name, UnionVariant[] Variants) : SymbolType(Name);
+    public sealed record class UnionVariant(Symbol.Union UnionSymbol, string Name, (SymbolType Type, string Name)[] Fields) : SymbolType(Name);
+    public sealed record class Union : SymbolType
+    {
+        public bool Resolved { get; set; } = false;
+
+        public Symbol.Union UnionSymbol { get; }
+        public UnionVariant[] Variants { get; set; }
+
+        public Union(Symbol.Union symbol, string name, UnionVariant[] variants)
+            : base(name)
+        {
+            UnionSymbol = symbol;
+            Variants = variants;
+        }
+    }
 
     public sealed override string ToString() => Name;
 

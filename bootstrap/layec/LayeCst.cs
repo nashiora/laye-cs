@@ -112,8 +112,12 @@ internal abstract record class LayeCst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class DeadCode(SourceSpan SourceSpan, Stmt[] Body) : Stmt(SourceSpan);
     
     public sealed record class If(Expr Condition, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, IfBody, ElseBody));
+    public sealed record class IfIs(Expr ValueExpression, bool IsNot, SymbolType.UnionVariant VariantType, Symbol.Binding? Binding, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(ValueExpression, IfBody, ElseBody));
+    public sealed record class IfIsNil(Expr ValueExpression, bool IsNot, Stmt IfBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(ValueExpression, IfBody, ElseBody));
     public sealed record class While(Expr Condition, Stmt WhileBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Condition, WhileBody, ElseBody));
     public sealed record class CFor(Stmt? Initializer, Expr? Condition, Stmt? Iterator, Stmt ForBody, Stmt? ElseBody) : Stmt(SourceSpan.Combine(Initializer, Condition, Iterator, ForBody, ElseBody));
+    //public sealed record class ValueSwitch(Expr? TargetExpression);
+    //public sealed record class TagSwitch();
 
     public sealed record class BindingDeclaration(LayeToken.Identifier BindingName, Symbol BindingSymbol, Expr? Expression)
         : Stmt(SourceSpan.Combine(new IHasSourceSpan?[] { BindingName, Expression }));

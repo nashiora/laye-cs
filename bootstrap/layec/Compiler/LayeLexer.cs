@@ -456,6 +456,7 @@ internal sealed class LayeLexer
             case "xor": return new LayeToken.Keyword(span, Keyword.Xor);
             case "not": return new LayeToken.Keyword(span, Keyword.Not);
             case "cast": return new LayeToken.Keyword(span, Keyword.Cast);
+            case "is": return new LayeToken.Keyword(span, Keyword.Is);
             case "sizeof": return new LayeToken.Keyword(span, Keyword.SizeOf);
             case "nameof": return new LayeToken.Keyword(span, Keyword.NameOf);
             case "nameof_variant": return new LayeToken.Keyword(span, Keyword.NameOf_Variant);

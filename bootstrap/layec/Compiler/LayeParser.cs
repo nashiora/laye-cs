@@ -1052,9 +1052,48 @@ internal sealed class LayeParser
                 return null;
             }
 
+            LayeToken.Identifier? variantName = null;
+            bool isNilPattern = false;
+            bool isPatternNot = false;
+            LayeToken.Identifier? isBindingName = null;
+
+            if (CheckKeyword(Keyword.Is))
+            {
+                Advance(); // `is`
+
+                if (CheckKeyword(Keyword.Not))
+                {
+                    Advance(); // `not`
+                    isPatternNot = true;
+                }
+
+                if (CheckKeyword(Keyword.Nil))
+                {
+                    Advance(); // `nil`
+                    isNilPattern = true;
+                    goto continue_if_parse;
+                }
+
+                if (!ExpectDelimiter(Delimiter.PathSeparator))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `::` to begin variant name pattern"));
+                    return null;
+                }
+
+                if (!ExpectIdentifier(out variantName))
+                {
+                    m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected variant name"));
+                    return null;
+                }
+
+                if (CheckIdentifier(out isBindingName))
+                    Advance(); // binding name
+            }
+
+        continue_if_parse:
             if (!ExpectDelimiter(Delimiter.CloseParen))
             {
-                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to open if condition"));
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `)` to close if condition"));
                 return null;
             }
 
@@ -1077,7 +1116,11 @@ internal sealed class LayeParser
                 }
             }
 
-            return new LayeAst.If(condition, passBody, failBody);
+            if (isNilPattern)
+                return new LayeAst.IfIsNil(condition, isPatternNot, passBody, failBody);
+            else if (variantName is not null)
+                return new LayeAst.IfIs(condition, isPatternNot, variantName, isBindingName, passBody, failBody);
+            else return new LayeAst.If(condition, passBody, failBody);
         }
         else if (CheckKeyword(Keyword.While))
         {
