@@ -1,3 +1,31 @@
+bool string_equals(string a, string b)
+{
+    if (a.length != b.length) return false;
+
+    uint i = 0;
+    while (i < a.length)
+    {
+        if (a[i] != b[i]) return false;
+        i = i + 1;
+    }
+
+    return true;
+}
+
+bool string_start_equals(string a, string b, uint length)
+{
+    if (a.length < length or b.length < length) return false;
+
+    uint i = 0;
+    while (i < length)
+    {
+        if (a[i] != b[i]) return false;
+        i = i + 1;
+    }
+
+    return true;
+}
+
 u8[*] string_to_cstring(string s)
 {
     u8 readonly[*] data = s.data;
@@ -27,7 +55,7 @@ string uint_to_string(uint v)
 {
     string_builder builder;
     string_builder_append_uint(&builder, v);
-    
+
     string result = string_builder_to_string(builder);
     string_builder_free(&builder);
     return result;

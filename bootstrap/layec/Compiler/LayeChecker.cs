@@ -680,7 +680,10 @@ internal sealed class LayeChecker
                 LayeCst.Expr? returnExpr = null;
                 if (returnStmt.ReturnValue is { } expr)
                 {
+                    PushTypeContext(CurrentScope.FunctionSymbol!.Type!.ReturnType);
                     returnExpr = CheckExpression(expr);
+                    PopTypeContext();
+
                     if (returnExpr is null)
                     {
                         AssertHasErrors("checking return value");

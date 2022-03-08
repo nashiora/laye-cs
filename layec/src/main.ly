@@ -15,16 +15,16 @@
     [ ] Offset of structure element (optional?) `offsetof(Type, field_name)`
     [ ] Structural initializers
     [X] Zero initializers
-[!] Branch structures
+[ ] Branch structures
     [X] If/else `if (expr) { } else if (expr) { } else { }
     [X] While `while (expr) { } else { }`
     [ ] C-style For `for (binding or expr; expr; expr) { } else { }`
-    [!] Switch statements `switch (expr) { case Constant: <scoped exprs, no break needed> default: <same> }`
+    [ ] Switch statements `switch (expr) { case Constant: <scoped exprs, no break needed> default: <same> }`
 [ ] Tagged unions
     [X] Enum syntax `enum EnumName { VariantName }` `enum EnumName { VariantName(int VariantField) }`
-    [!] Switch statement support for enums `switch (expr) { case EnumName::VariantName: <scoped exprs, no break needed> case ::VariantName <same> default: <same> }`
+    [ ] Switch statement support for enums `switch (expr) { case EnumName::VariantName: <scoped exprs, no break needed> case ::VariantName <same> default: <same> }`
     [X] Union syntax (optional) `enum EnumName { VariantName }` `enum EnumName { VariantName(int VariantField) }`
-    [!] Switch statement support for unions (optional) `switch (expr) { case UnionName::VariantName: <scoped exprs, no break needed> default: <same> }`
+    [ ] Switch statement support for unions (optional) `switch (expr) { case UnionName::VariantName: <scoped exprs, no break needed> default: <same> }`
 
 */
 
@@ -77,7 +77,18 @@ void laye_main(string[] args)
         printf("failed to open file%c", 10);
         return;
     }
+
+    parser_data layeParser;
+    parser_init(&layeParser, sourceFile, &diagnostics);
+
+    syntax_node[dynamic] nodes;
+    bool success = parser_read_all_laye_nodes(&layeParser, &nodes);
+
+    if (success)
+        printf("read %llu top level nodes from file successfully%c", nodes.length, 10);
+    else printf("failed to read top level nodes from file%c", 10);
     
+    /*
     syntax_token[] sourceTokens = lexer_read_laye_tokens(sourceFile, &diagnostics);
 
     printf("read %llu tokens from file successfully%c", sourceTokens.length, 10);
@@ -102,6 +113,7 @@ void laye_main(string[] args)
             i = i + 1;
         }
     }
+    // */
 }
 
 void diagnostics_print(diagnostic_bag b)

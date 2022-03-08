@@ -49,64 +49,6 @@ bool rune_is_laye_identifier_part(i32 r)
 	return unicode_is_digit(r) or unicode_is_letter(r) or r == 95 /* `_` */;
 }
 
-struct lexer_data
-{
-	source currentSource;
-	uint currentIndex;
-
-	uint currentColumn;
-	uint currentLine;
-
-	diagnostic_bag *diagnostics;
-}
-
-bool lexer_is_eof(lexer_data l)
-{
-	return l.currentIndex >= l.currentSource.text.length or l.currentSource.text[l.currentIndex] == 0;
-}
-
-i32 lexer_current_rune(lexer_data l)
-{
-	if (lexer_is_eof(l)) return 0;
-	//return cast(i32) l.currentSource.text[l.currentIndex];
-	return unicode_utf8_string_rune_at_index(l.currentSource.text, l.currentIndex);
-}
-
-i32 lexer_peek_rune(lexer_data l)
-{
-	if (lexer_is_eof(l)) return 0;
-	uint currentByteCount = unicode_utf8_calc_encoded_byte_count(l.currentSource.text[l.currentIndex]);
-
-	//if (l.currentIndex + currentByteCount >= l.currentSource.text.length) return 0;
-	//return cast(i32) l.currentSource.text[l.currentIndex + 1];
-	return unicode_utf8_string_rune_at_index(l.currentSource.text, l.currentIndex + currentByteCount); // this function checks for bounds errors etc. and returns 0 if so
-}
-
-source_location lexer_current_location(lexer_data l)
-{
-	source_location location;
-	location.source = l.currentSource;
-	location.characterIndex = l.currentIndex;
-	location.lineNumber = l.currentLine;
-	location.columnNumber = l.currentColumn;
-	return location;
-}
-
-void lexer_advance(lexer_data *l)
-{
-	if (lexer_is_eof(*l)) return;
-
-	i32 c = lexer_current_rune(*l);
-	l.currentIndex = l.currentIndex + 1;
-
-	if (c == 10)
-	{
-		l.currentLine = l.currentLine + 1;
-		l.currentColumn = 1;
-	}
-	else l.currentColumn = l.currentColumn + 1;
-}
-
 syntax_trivia[] lexer_get_syntax_trivia(lexer_data *l, bool untilEndOfLine)
 {
 	syntax_trivia[dynamic] triviaList;
@@ -193,42 +135,6 @@ syntax_trivia[] lexer_get_syntax_trivia(lexer_data *l, bool untilEndOfLine)
 	return trivia;
 }
 
-syntax_token[] lexer_read_laye_tokens(source source, diagnostic_bag *diagnostics)
-{
-	if (not source.isValid)
-	{
-		syntax_token[] dummyResult;
-		return dummyResult;
-	}
-
-	syntax_token[dynamic] resultTokens;
-
-	lexer_data l;
-	l.diagnostics = diagnostics;
-	l.currentSource = source;
-	l.currentLine = 1;
-	l.currentColumn = 1;
-
-	while (not lexer_is_eof(l))
-	{
-		//printf("  reading token...%c", 10);
-
-		uint currentIndex = l.currentIndex;
-		syntax_token token = lexer_read_laye_token(&l);
-
-		// if we didn't advance, panic
-		assert(currentIndex != l.currentIndex, "internal Laye lexer error: call to `lexer_read_syntax_token` did not consume any characters");
-		assert(token.kind != nil, "internal Laye lexer error: call to `lexer_read_syntax_token` returned a nil-kinded token");
-
-		// TODO(local): check if the token is EoF token? don't append? EoF can have trivia that needs to be maintained somehow
-		dynamic_append(resultTokens, token);
-	}
-
-	syntax_token[] tokens = resultTokens[:resultTokens.length];
-	dynamic_free(resultTokens);
-	return tokens;
-}
-
 syntax_token lexer_read_laye_token(lexer_data *l)
 {
 	assert(not lexer_is_eof(*l), "lexer_read_syntax_token called when at EoF");
@@ -281,6 +187,23 @@ syntax_token lexer_read_laye_token(lexer_data *l)
 	}
 	else if (c == 34 /* " */)
 		lexer_read_laye_string(l, &token);
+	else if (c == 35 /* # */)
+	{
+		lexer_advance(l);
+		if (c == 91 /* [ */)
+		{
+			lexer_advance(l);
+			token.kind = ::hash_open_bracket;
+		}
+		else
+		{
+			token.kind = ::poison_token;
+			// set the source span here, because we're copying it into the diagnostic
+			token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+
+			diagnostics_add_error(l.diagnostics, ::token(token), "invalid token `#` in Laye source text (did you mean `#[`?)");
+		}
+	}
 	else if (c == 37 /* % */)
 	{
 		lexer_advance(l);
@@ -296,7 +219,7 @@ syntax_token lexer_read_laye_token(lexer_data *l)
 			// set the source span here, because we're copying it into the diagnostic
 			token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
 
-			diagnostics_add_warning(l.diagnostics, ::token(token), "invalid token `&&` in Laye source text (did you mean `and`?)");
+			diagnostics_add_warning(l.diagnostics, ::token(token), "suspicious token `&&` in Laye source text (did you mean `and`?)");
 			diagnostics_add_info(l.diagnostics, ::token(token), "`&` can be either the bitwise and infix operator or the address-of prefix operator; `&&` could only legally appear as taking an address of an address inline, which is incredibly unlikely and must instead be written as `&(&variable)` if needed to avoid the much more common mistake of using `&&` as the logical and infix operator");
 		}
 		else token.kind = ::amp;
@@ -462,6 +385,18 @@ syntax_token lexer_read_laye_token(lexer_data *l)
 	syntax_trivia[] trailingTrivia = lexer_get_syntax_trivia(l, true);
 	token.trailingTrivia = trailingTrivia;
 
+	if (true)
+	{
+        string tokenLocationString = source_location_to_string(token.sourceSpan.startLocation);
+        string tokenString = source_span_to_string(token.sourceSpan);
+        string tokenKindString = nameof_variant(token.kind);
+
+        printf("> token %.*s (%.*s) %.*s%c", tokenKindString.length, tokenKindString.data,
+            tokenLocationString.length, tokenLocationString.data,
+            tokenString.length, tokenString.data,
+            10);
+	}
+
 	return token;
 }
 
@@ -512,9 +447,256 @@ void lexer_read_laye_identifier_or_number(lexer_data *l, syntax_token *token)
 		source_location endLocation = lexer_current_location(*l);
 		token.sourceSpan = source_span_create(startLocation, endLocation);
 
-		string ident = source_span_to_string(token.sourceSpan);
-		token.kind = ::ident(ident);	
+		string image = source_span_to_string(token.sourceSpan);
+		token.kind = get_laye_keyword_kind(l, image);
 	}
+}
+
+u16 is_image_suffixed_with_positive_integer(string image, uint startIndex)
+{
+	assert(image.length > 0, "is_image_suffixed_with_positive_integer passed an image with no characters");
+	assert(startIndex > 0, "is_image_suffixed_with_positive_integer passed an index of 0");
+
+	uint i = startIndex;
+	uint suffix = 0;
+
+	while (i < image.length)
+	{
+		// we don't need to use the rune functions here since the things we're checking for are all ASCII
+		u8 c = image[i];
+		if (not char_is_digit(c)) return 0;
+
+		suffix = suffix * 10;
+		suffix = suffix + c - 48;
+
+		i = i + 1;
+	}
+
+	if (suffix > 65535) suffix = 0;
+	return cast(u16) suffix;
+}
+
+syntax_token_kind get_laye_keyword_kind(lexer_data *l, string image)
+{
+	assert(image.length > 0, "get_laye_keyword_kind passed an image with no characters");
+
+	// TODO(local): switch (or LUT)
+	if (image[0] == 97 /* a */)
+	{
+		if (string_equals(image, "and"))
+			return ::kw_and;
+	}
+	else if (image[0] == 98 /* b */)
+	{
+		if (string_equals(image, "bool"))
+			return ::kw_bool;
+		else if (string_equals(image, "break"))
+			return ::kw_break;
+		else
+		{
+			u16 suffixValue = is_image_suffixed_with_positive_integer(image, 1);
+			if (suffixValue != 0)
+				return ::kw_bool_sized(suffixValue);
+		}
+	}
+	else if (image[0] == 99 /* c */)
+	{
+		if (string_equals(image, "callconv"))
+			return ::kw_callconv;
+		else if (string_equals(image, "case"))
+			return ::kw_case;
+		else if (string_equals(image, "cast"))
+			return ::kw_cast;
+		else if (string_equals(image, "const"))
+			return ::kw_const;
+		else if (string_equals(image, "context"))
+			return ::kw_context;
+		else if (string_equals(image, "continue"))
+			return ::kw_continue;
+	}
+	else if (image[0] == 100 /* d */)
+	{
+		/* if (string_equals(image, "default"))
+			return ::kw_default;
+		else */ if (string_equals(image, "defer"))
+			return ::kw_defer;
+		else if (string_equals(image, "dynamic"))
+			return ::kw_dynamic;
+		else if (string_equals(image, "dynamic_append"))
+			return ::kw_dynamic_append;
+		else if (string_equals(image, "dynamic_free"))
+			return ::kw_dynamic_append;
+	}
+	else if (image[0] == 101 /* e */)
+	{
+		// TODO(local): `export` ?
+		if (string_equals(image, "else"))
+			return ::kw_else;
+		else if (string_equals(image, "enum"))
+			return ::kw_enum;
+		/* else if (string_equals(image, "extern"))
+			return ::kw_extern; */
+	}
+	else if (image[0] == 102 /* f */)
+	{
+		if (string_equals(image, "false"))
+			return ::kw_false;
+		else if (string_equals(image, "float"))
+			return ::kw_float;
+		else if (string_equals(image, "for"))
+			return ::kw_for;
+		else if (string_equals(image, "foreign"))
+			return ::kw_foreign;
+		else
+		{
+			u16 suffixValue = is_image_suffixed_with_positive_integer(image, 1);
+			if (suffixValue != 0)
+				return ::kw_float_sized(suffixValue);
+		}
+	}
+	else if (image[0] == 103 /* g */)
+	{
+		if (string_equals(image, "global"))
+			return ::kw_global;
+	}
+	else if (image[0] == 105 /* i */)
+	{
+		if (string_equals(image, "if"))
+			return ::kw_if;
+		else if (string_equals(image, "inline"))
+			return ::kw_inline;
+		else if (string_equals(image, "int"))
+			return ::kw_int;
+		else /* if (string_equals(image, "intrinsic"))
+			return ::kw_intrinsic;
+		else */ if (string_equals(image, "is"))
+			return ::kw_is;
+		else if (string_start_equals(image, "ileast", 6))
+		{
+			u16 suffixValue = is_image_suffixed_with_positive_integer(image, 6);
+			if (suffixValue != 0)
+				return ::kw_int_least_sized(suffixValue);
+		}
+		else
+		{
+			u16 suffixValue = is_image_suffixed_with_positive_integer(image, 1);
+			if (suffixValue != 0)
+				return ::kw_int_sized(suffixValue);
+		}
+	}
+	else if (image[0] == 110 /* n */)
+	{
+		if (string_equals(image, "naked"))
+			return ::kw_naked;
+		else if (string_equals(image, "nameof"))
+			return ::kw_nameof;
+		else if (string_equals(image, "nameof_variant"))
+			return ::kw_nameof_variant;
+		else if (string_equals(image, "namespace"))
+			return ::kw_namespace;
+		else if (string_equals(image, "nil"))
+			return ::kw_nil;
+		else if (string_equals(image, "noinit"))
+			return ::kw_noinit;
+		else if (string_equals(image, "not"))
+			return ::kw_not;
+		else if (string_equals(image, "noreturn"))
+			return ::kw_noreturn;
+		else if (string_equals(image, "nullptr"))
+			return ::kw_nullptr;
+	}
+	else if (image[0] == 111 /* o */)
+	{
+		if (string_equals(image, "offsetof"))
+			return ::kw_offsetof;
+		else if (string_equals(image, "or"))
+			return ::kw_or;
+	}
+	else if (image[0] == 112 /* p */)
+	{
+		if (string_equals(image, "private"))
+			return ::kw_private;
+		else if (string_equals(image, "public"))
+			return ::kw_public;
+	}
+	else if (image[0] == 114 /* r */)
+	{
+		if (string_equals(image, "rawptr"))
+			return ::kw_rawptr;
+		else if (string_equals(image, "readonly"))
+			return ::kw_readonly;
+		else if (string_equals(image, "return"))
+			return ::kw_return;
+		else if (string_equals(image, "rune"))
+			return ::kw_rune;
+	}
+	else if (image[0] == 115 /* s */)
+	{
+		if (string_equals(image, "sizeof"))
+			return ::kw_sizeof;
+		else if (string_equals(image, "string"))
+			return ::kw_string;
+		else if (string_equals(image, "struct"))
+			return ::kw_struct;
+		else if (string_equals(image, "switch"))
+			return ::kw_switch;
+	}
+	else if (image[0] == 116 /* t */)
+	{
+		if (string_equals(image, "true"))
+			return ::kw_true;
+		else if (l.contextLayeCompileTimeExpression and string_equals(image, "target"))
+			return ::kw_target;
+	}
+	else if (image[0] == 117 /* u */)
+	{
+		if (string_equals(image, "uint"))
+			return ::kw_uint;
+		else if (string_equals(image, "unreachable"))
+			return ::kw_unreachable;
+		else if (string_equals(image, "using"))
+			return ::kw_using;
+		else if (string_start_equals(image, "uleast", 6))
+		{
+			u16 suffixValue = is_image_suffixed_with_positive_integer(image, 6);
+			if (suffixValue != 0)
+				return ::kw_uint_least_sized(suffixValue);
+		}
+		else
+		{
+			u16 suffixValue = is_image_suffixed_with_positive_integer(image, 1);
+			if (suffixValue != 0)
+				return ::kw_uint_sized(suffixValue);
+		}
+	}
+	else if (image[0] == 118 /* v */)
+	{
+		if (string_equals(image, "var"))
+			return ::kw_var;
+		else if (string_equals(image, "varargs"))
+			return ::kw_varargs;
+		else if (string_equals(image, "void"))
+			return ::kw_void;
+	}
+	else if (image[0] == 119 /* w */)
+	{
+		if (string_equals(image, "while"))
+			return ::kw_while;
+		else if (string_equals(image, "writeonly"))
+			return ::kw_writeonly;
+	}
+	else if (image[0] == 120 /* x */)
+	{
+		if (string_equals(image, "xor"))
+			return ::kw_xor;
+	}
+	else if (image[0] == 121 /* y */)
+	{
+		if (string_equals(image, "yield"))
+			return ::kw_yield;
+	}
+
+	return ::ident(image);
 }
 
 void lexer_read_laye_radix_integer_from_delimiter(lexer_data *l, syntax_token *token, source_location startLocation, u64 radix)

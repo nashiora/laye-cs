@@ -2,7 +2,7 @@
  *
  * Diagnostics are reports of information, warnings and errors in the source text.
  * 
- *
+ * The base diagnostic data structures don't do anything fancy: if we want to point out 
  *
  *
  */
@@ -10,6 +10,11 @@
 struct diagnostic
 {
     string message;
+    /* Optional string of any (optionally annotated) source text associated with the diagnostic.
+     * Separate from message so editors don't have massive errors to display or parse.
+     * Also separate from the text you can get out of the associated source span so that the text view and annotations can be context driven.
+     */
+    string sourceText;
     diagnostic_source_kind sourceKind;
     diagnostic_kind kind;
 }
@@ -19,8 +24,7 @@ enum diagnostic_source_kind
     span(source_span sourceSpan),
     token(syntax_token token),
     trivia(syntax_trivia trivia),
-    //syntax(syntax_node node)
-    //ir(),
+    //syntax(syntax_node node),
 }
 
 enum diagnostic_kind
@@ -41,6 +45,8 @@ source_span diagnostic_source_span_get(diagnostic d)
     //if (d.sourceKind is ::node nodeKind) return nodeKind.node.sourceSpan;
     //if (d.sourceKind is ::ir irKind) return irKind.node.sourceSpan;
 
+    // NOTE(local): switch
+    // NOTE(local): unreachable
     panic("unhandled case in diagnostic_source_span_get");
 
     // compiler requires return value
@@ -85,7 +91,6 @@ void diagnostics_add_error(diagnostic_bag *b, diagnostic_source_kind sourceKind,
 struct syntax_trivia
 {
     source_span sourceSpan;
-
     syntax_trivia_kind kind;
 }
 
@@ -139,6 +144,7 @@ enum syntax_token_kind
     close_bracket,
     open_brace,
     close_brace,
+    hash_open_bracket,
 
     comma,
     dot,
@@ -192,9 +198,10 @@ enum syntax_token_kind
     kw_dynamic_append, kw_dynamic_free,
     kw_defer,
 
-    kw_void,
+    kw_void, kw_var,
     kw_int, kw_uint,
     kw_int_sized(u16 size), kw_uint_sized(u16 size),
+    kw_int_least_sized(u16 size), kw_uint_least_sized(u16 size),
     kw_bool, kw_float,
     kw_bool_sized(u16 size), kw_float_sized(u16 size),
     kw_rune, kw_string,
@@ -211,10 +218,11 @@ enum syntax_token_kind
     kw_true, kw_false,
     kw_nil, kw_nullptr,
     kw_context, kw_noinit,
+    kw_target,
 
-    kw_global,
+    kw_global, kw_namespace, kw_using,
 
-    kw_extern,
+    kw_extern, kw_foreign,
     kw_public, kw_private,
     // kw_internal, // internal by default, so no keyword for it?
 
@@ -235,7 +243,77 @@ enum syntax_token_kind
     kw_default, /* do we need `default` in Laye? `case:` serves the same purpose, and we don't need `= default` since we want everything to be default if set to 0 */
     kw_return, kw_yield, /* yield is probably only necessary when we get generators so can likely be ignored for a while. good to reserve it, though */
     kw_break, kw_continue,
+    kw_unreachable,
 }
+
+/* ===== Syntax Tree =====
+ *
+ *
+ *
+ *
+ */
+
+ struct syntax_node
+ {
+    source_span sourceSpan;
+    symbol_type_ref typeRef; /* typeRef will be invalid for non-expression nodes or nodes with no yet-resolved type. */
+    syntax_node_kind kind;
+ }
+
+ enum syntax_node_kind
+ {
+    // ===== Identifier Nodes
+
+    /* This is not an error during parsing. Represents an identifier with no yet-known meaning.
+     * If this node cannot be replaced with a resolved identifier node during checking then an unresolved identifier error is issued. */
+    unresolved_identifier(syntax_token identifier),
+
+    // TODO(local): other identifier node types
+
+    // ===== Literal Nodes
+
+    untyped_literal_integer(syntax_token literal), /* A literal integer with no type information. */
+    typed_literal_integer(syntax_token literal), /* A literal integer with known and validated type information. */
+    /* A literal integer with known but invalid type information.
+     * For example, in `i8 v = 800;` contains `800` the type can be known to be `i8`, but 800 is far above the signed 8-bit maximum.
+     * A bad assignment will also lead to a bad typed literal. `string s = 10;` will result in a literal integer typed with the default integer type `uint`. */
+    bad_typed_literal_integer(syntax_token literal),
+
+    untyped_literal_float(syntax_token literal),
+    typed_literal_float(syntax_token literal),
+    /* A literal float with known but invalid type information. The same functionality as bad_typed_literal_integer for floats. */
+    bad_typed_literal_float(syntax_token literal),
+
+    untyped_literal_string(syntax_token literal), /* A literal string with no type information. */
+    typed_literal_string(syntax_token literal), /* A literal string with known and validated type information. */
+    /* A literal string with known but invalid type information. The same functionality as bad_typed_literal_integer for strings. */
+    bad_typed_literal_string(syntax_token literal),
+
+    untyped_literal_bool(syntax_token literal), /* A literal bool with no type information. */
+    typed_literal_bool(syntax_token literal), /* A literal bool with known type information. */
+    /* A literal bool with known but invalid type information. The same functionality as bad_typed_literal_integer for bools. */
+    bad_typed_literal_bool(syntax_token literal),
+
+    /* A literal rune with no type information. Some representation of a unicode codepoint by default.
+     * (Note that rune literals are type `rune` by default. It's entirely possible that we allow a rune literal to implicitly convert to a single byte (i8/u8)
+     *  if it's in range, for anything working with ASCII for example, or to byte arrays or slices since those can be constructed at compile time.) */
+    untyped_literal_rune(syntax_token literal),
+    typed_literal_rune(syntax_token literal), /* A literal rune with known type information. */
+    /* A literal rune with known but invalid type information. The same functionality as bad_typed_literal_integer for runes. */
+    bad_typed_literal_rune(syntax_token literal),
+
+    /* A literal nil with no type information. Nil is used for nilable types and union variants.
+     * This does not refer to the explicit union variant syntax `*::nil` though it can still be implicitly converted to it. */
+    untyped_literal_nil(syntax_token literal),
+    typed_literal_nil(syntax_token literal), /* A literal nil with known type information. This includes union variant nil conversion. */
+    /* A literal nil with known but invalid type information. The same functionality as bad_typed_literal_integer for nils. */
+    bad_typed_literal_nil(syntax_token literal),
+
+    untyped_literal_nullptr(syntax_token literal), /* A literal nullptr with no type information. */
+    typed_literal_nullptr(syntax_token literal), /* A literal nullptr with known type information. */
+    /* A literal nullptr with known but invalid type information. The same functionality as bad_typed_literal_integer for nullptrs. */
+    bad_typed_literal_nullptr(syntax_token literal),
+ }
 
 /* ===== Symbols =====
  * 
@@ -275,6 +353,8 @@ struct symbol
 
     symbol_kind kind;
     symbol_visibility_kind visibility;
+
+    symbol_type_ref typeRef;
 }
 
 enum symbol_kind
@@ -297,4 +377,45 @@ enum symbol_visibility_kind
     exported, // laye's `public`
     project, // laye's `internal`
     file, // laye's `private`
+}
+
+struct symbol_type_table
+{
+    symbol_type[dynamic] types;
+}
+
+struct symbol_type_ref
+{
+    uint typeIndex; /* Opaque index into a symbol_type_table. The current implmenentation subtracts 1 from this index to look up the type. */
+}
+
+struct symbol_type
+{
+    string typeName;
+    symbol_type_kind kind;
+}
+
+enum symbol_type_kind
+{
+    /* A generic result for expressions which have already had errors reported or for which no other bad type is valid.
+     * Many invalid situations regarding types can still have sensible "poison" values.
+     * When you would generate an error related to a poison type, instead you don't. */
+    poison_type,
+}
+
+bool symbol_type_ref_is_valid(symbol_type_table table, symbol_type_ref typeRef)
+{
+    return typeRef.typeIndex != 0 and typeRef.typeIndex - 1 < table.types.length;
+}
+
+symbol_type symbol_type_table_lookup(symbol_type_table table, symbol_type_ref typeRef)
+{
+    if (not symbol_type_ref_is_valid(table, typeRef))
+    {
+        symbol_type invalidType;
+        return invalidType;
+    }
+
+    uint index = typeRef.typeIndex - 1;
+    return table.types[index];
 }
