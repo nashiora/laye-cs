@@ -253,15 +253,15 @@ enum syntax_token_kind
  *
  */
 
- struct syntax_node
- {
+struct syntax_node
+{
     source_span sourceSpan;
     symbol_type_ref typeRef; /* typeRef will be invalid for non-expression nodes or nodes with no yet-resolved type. */
     syntax_node_kind kind;
- }
+}
 
- enum syntax_node_kind
- {
+enum syntax_node_kind
+{
     // ===== Identifier Nodes
 
     /* This is not an error during parsing. Represents an identifier with no yet-known meaning.
@@ -487,22 +487,22 @@ enum syntax_token_kind
     type_pointer(syntax_node *elementType, syntax_token tkPointer),
 
     type_empty,
- }
+}
 
- bool syntax_node_type_contains_var(syntax_node *typeNode)
- {
+bool syntax_node_type_contains_var(syntax_node *typeNode)
+{
     if (typeNode.kind is ::type_var)
         return true;
     else if (typeNode.kind is ::type_pointer typePointer)
         return syntax_node_type_contains_var(typePointer.elementType);
     else return false;
- }
+}
 
- bool syntax_node_is_type(syntax_node *node)
- {
+bool syntax_node_is_type(syntax_node *node)
+{
     // TODO(local): don't use string compares to check if it's a type
     return string_start_equals("type_", nameof_variant(node.kind), 5);
- }
+}
 
 /* ===== Symbols =====
  * 
