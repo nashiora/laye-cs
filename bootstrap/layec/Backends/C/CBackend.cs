@@ -417,6 +417,8 @@ int main(int argc, char** argv) {{
                 var stringBuilder = new StringBuilder();
 
                 string stringName = $"ly_string";
+                m_cTypeNames[stringType] = stringName;
+
                 m_typedefs.AppendLine($"typedef struct {stringName} {stringName};");
 
                 stringBuilder.AppendLine($"struct {stringName} {{");
@@ -425,8 +427,6 @@ int main(int argc, char** argv) {{
                 stringBuilder.AppendLine("};");
 
                 m_typeDecls.AppendLine(stringBuilder.ToString());
-
-                m_cTypeNames[stringType] = stringName;
             } break;
 
             case SymbolType.Slice sliceType:
@@ -434,6 +434,8 @@ int main(int argc, char** argv) {{
                 var sliceBuilder = new StringBuilder();
 
                 string sliceName = $"ly_slice_{m_uniqueIndexCounter++}";
+                m_cTypeNames[sliceType] = sliceName;
+
                 m_typedefs.AppendLine($"typedef struct {sliceName} {sliceName}; /* laye type: {sliceType} */");
 
                 sliceBuilder.AppendLine($"struct {sliceName} {{");
@@ -444,8 +446,6 @@ int main(int argc, char** argv) {{
 
                 sliceBuilder.AppendLine("};");
                 m_typeDecls.AppendLine(sliceBuilder.ToString());
-
-                m_cTypeNames[sliceType] = sliceName;
             } break;
 
             case SymbolType.Struct structType:
@@ -453,6 +453,8 @@ int main(int argc, char** argv) {{
                 var structBuilder = new StringBuilder();
 
                 string structName = $"ly_{structType.Name}";
+                m_cTypeNames[structType] = structName;
+
                 m_typedefs.AppendLine($"typedef struct {structName} {structName};");
 
                 structBuilder.AppendLine($"struct {structName} {{");
@@ -474,8 +476,6 @@ int main(int argc, char** argv) {{
 
                 structBuilder.AppendLine("};");
                 m_typeDecls.AppendLine(structBuilder.ToString());
-
-                m_cTypeNames[structType] = structName;
             } break;
 
             case SymbolType.Enum enumType:
@@ -483,6 +483,8 @@ int main(int argc, char** argv) {{
                 var enumBuilder = new StringBuilder();
 
                 string enumName = $"ly_{enumType.Name}";
+                m_cTypeNames[enumType] = enumName;
+
                 m_typedefs.AppendLine($"typedef enum {enumName} {enumName};");
 
                 enumBuilder.AppendLine($"enum {enumName} {{");
@@ -506,7 +508,6 @@ int main(int argc, char** argv) {{
                 enumBuilder.AppendLine("};");
                 m_typeDecls.AppendLine(enumBuilder.ToString());
 
-                m_cTypeNames[enumType] = enumName;
 
                 enumBuilder.Clear();
 
@@ -545,6 +546,8 @@ int main(int argc, char** argv) {{
 
                 string unionName = $"ly_{unionType.Name}";
                 string unionEnumName = $"ly_{unionType.Name}_Kinds";
+                m_cTypeNames[unionType] = unionName;
+
                 m_typedefs.AppendLine($"typedef struct {unionName} {unionName};");
                 //m_typedefs.AppendLine($"typedef enum {unionEnumName} {unionEnumName};");
 
@@ -605,8 +608,6 @@ int main(int argc, char** argv) {{
                 unionBuilder.AppendLine("  } variants;");
                 unionBuilder.AppendLine("};");
                 m_typeDecls.AppendLine(unionBuilder.ToString());
-
-                m_cTypeNames[unionType] = unionName;
 
                 //*
                 unionBuilder.Clear();
@@ -860,7 +861,7 @@ int main(int argc, char** argv) {{
             {
                 string tempName = $"ly_dyn_{m_uniqueIndexCounter++}";
 
-                builder.Append("ly_dynamic_t* ");
+                builder.Append("{ ly_dynamic_t* ");
                 builder.Append(tempName);
                 builder.Append(" = &(");
                 CompileExpression(builder, dynAppendStmt.TargetExpression);
@@ -888,7 +889,7 @@ int main(int argc, char** argv) {{
 
                 AppendTabs(builder);
                 builder.Append(tempName);
-                builder.AppendLine("->count++;");
+                builder.AppendLine("->count++; }");
             } break;
 
             case LayeCst.DynamicFree dynFreeStmt:
@@ -1040,6 +1041,59 @@ int main(int argc, char** argv) {{
                 builder.AppendLine("}");
             } break;
 
+            case LayeCst.IfIsNil ifIsNilStmt:
+            {
+                string valueName = $"ifis_value_{m_uniqueIndexCounter++}";
+
+                builder.Append("if ((");
+                CompileExpression(builder, ifIsNilStmt.ValueExpression);
+                builder.Append(").kind");
+                if (ifIsNilStmt.IsNot)
+                    builder.Append(" != ");
+                else builder.Append(" == ");
+                builder.AppendLine("0)");
+
+                bool isBlockBody = ifIsNilStmt.IfBody is LayeCst.Block;
+
+                if (!isBlockBody) m_tabs++;
+                CompileStatement(builder, ifIsNilStmt.IfBody);
+                if (!isBlockBody) m_tabs--;
+
+                if (ifIsNilStmt.ElseBody is not null)
+                {
+                    AppendTabs(builder);
+                    builder.Append("else");
+
+                    int tabs = m_tabs;
+                    if (ifIsNilStmt.ElseBody is LayeCst.If)
+                    {
+                        //m_tabs = 0;
+                        builder.Append(' ');
+                        CompileStatement(builder, ifIsNilStmt.ElseBody);
+                        //m_tabs = tabs;
+                    }
+                    else
+                    {
+                        isBlockBody = ifIsNilStmt.ElseBody is LayeCst.Block;
+                        if (!isBlockBody)
+                        {
+                            m_tabs++;
+                            builder.AppendLine();
+                        }
+                        else
+                        {
+                            m_tabs = 0;
+                            builder.Append(' ');
+                        }
+
+                        CompileStatement(builder, ifIsNilStmt.ElseBody);
+                        if (!isBlockBody)
+                            m_tabs--;
+                        else m_tabs = tabs;
+                    }
+                }
+            } break;
+
             case LayeCst.While whileStmt:
             {
                 if (whileStmt.ElseBody is not null)
@@ -1074,6 +1128,7 @@ int main(int argc, char** argv) {{
             } break;
 
             case LayeCst.Break: builder.AppendLine("break;"); break;
+            case LayeCst.Continue: builder.AppendLine("continue;"); break;
 
             default:
             {

@@ -1030,11 +1030,23 @@ internal sealed class LayeParser
 
             if (!ExpectDelimiter(Delimiter.SemiColon, out _))
             {
-                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to close return"));
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to close break"));
                 return null;
             }
 
             return new LayeAst.Break(breakKw, null);
+        }
+        else if (CheckKeyword(Keyword.Continue, out var continueKw))
+        {
+            Advance(); // `continue`
+
+            if (!ExpectDelimiter(Delimiter.SemiColon, out _))
+            {
+                m_diagnostics.Add(new Diagnostic.Error(MostRecentTokenSpan, "expected `;` to close continue"));
+                return null;
+            }
+
+            return new LayeAst.Continue(continueKw, null);
         }
         else if (CheckKeyword(Keyword.If))
         {

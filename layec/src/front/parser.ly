@@ -4,6 +4,8 @@ struct parser_data
 
 	syntax_token currentToken;
 	parser_context_kind parseContext;
+
+	diagnostic_bag *diagnostics;
 }
 
 enum parser_context_kind
@@ -20,6 +22,7 @@ void parser_init(parser_data *p, source source, diagnostic_bag *diagnostics)
 	l.currentColumn = 1;
 
 	p.lexer = l;
+	p.diagnostics = diagnostics;
 }
 
 syntax_token parser_current_token(parser_data *p)
@@ -46,4 +49,19 @@ void parser_advance(parser_data *p)
 	// if we didn't advance, panic
 	assert(currentIndex != p.lexer.currentIndex, "internal Laye lexer error: call to `lexer_read_syntax_token` did not consume any characters");
 	assert(parser_current_token(p).kind != nil, "internal Laye lexer error: call to `lexer_read_syntax_token` returned a nil-kinded token");
+}
+
+syntax_node *syntax_node_alloc()
+{
+	syntax_node *result = cast(syntax_node *) malloc(sizeof(syntax_node));
+	
+	syntax_node zeroInit;
+	*result = zeroInit;
+	
+	return result;
+}
+
+void syntax_node_free(syntax_node *node)
+{
+	free(cast(rawptr) node);
 }

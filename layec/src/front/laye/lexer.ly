@@ -190,7 +190,7 @@ syntax_token lexer_read_laye_token(lexer_data *l)
 	else if (c == 35 /* # */)
 	{
 		lexer_advance(l);
-		if (c == 91 /* [ */)
+		if (lexer_current_rune(*l) == 91 /* [ */)
 		{
 			lexer_advance(l);
 			token.kind = ::hash_open_bracket;
@@ -696,7 +696,7 @@ syntax_token_kind get_laye_keyword_kind(lexer_data *l, string image)
 			return ::kw_yield;
 	}
 
-	return ::ident(image);
+	return ::laye_identifier(image);
 }
 
 void lexer_read_laye_radix_integer_from_delimiter(lexer_data *l, syntax_token *token, source_location startLocation, u64 radix)

@@ -24,7 +24,7 @@ enum diagnostic_source_kind
     span(source_span sourceSpan),
     token(syntax_token token),
     trivia(syntax_trivia trivia),
-    //syntax(syntax_node node),
+    syntax(syntax_node *node),
 }
 
 enum diagnostic_kind
@@ -42,7 +42,7 @@ source_span diagnostic_source_span_get(diagnostic d)
     if (d.sourceKind is ::span spanKind) return spanKind.sourceSpan;
     if (d.sourceKind is ::token tokenKind) return tokenKind.token.sourceSpan;
     if (d.sourceKind is ::trivia triviaKind) return triviaKind.trivia.sourceSpan;
-    //if (d.sourceKind is ::node nodeKind) return nodeKind.node.sourceSpan;
+    if (d.sourceKind is ::syntax syntaxKind) return syntaxKind.node.sourceSpan;
     //if (d.sourceKind is ::ir irKind) return irKind.node.sourceSpan;
 
     // NOTE(local): switch
@@ -117,7 +117,7 @@ enum syntax_token_kind
     eof,
     poison_token,
 
-    ident(string image), // the image should be the same as `source_span_to_string(token.sourceSpan)`, but we don't want to recompute that all the time
+    laye_identifier(string image), // the image should be the same as `source_span_to_string(token.sourceSpan)`, but we don't want to recompute that all the time
 
     // NOTE(local): a literal doesn't necessarily need to contain the value itself, we can re-parse it before code generation. see if you want to change this
     literal_integer(u64 value),
@@ -266,7 +266,22 @@ enum syntax_token_kind
 
     /* This is not an error during parsing. Represents an identifier with no yet-known meaning.
      * If this node cannot be replaced with a resolved identifier node during checking then an unresolved identifier error is issued. */
-    unresolved_identifier(syntax_token identifier),
+    identifier_unresolved(syntax_token identifier),
+
+    /* Simply represents the `global` keyword. */
+    identifier_global(syntax_token identifier),
+
+    /* a::b:c.d */
+    /* Note that it can optionally have invalid separators if the parser thinks they're mistakes. */
+    namespace_path(syntax_token[] identifiers, syntax_token[] separators),
+    /* The parser wanted a path, no path-related tokens were found */
+    namespace_path_empty,
+
+    /* global::win32::INVALID_HANDLE_VALUE */
+    /* Note that this is just arbitrary syntax in the same form as a namespace path.
+     * This can later be resolved to be part namespace path and part symbol lookup inside that
+     *   namespace or even a union variant constructor. */
+    namespace_lookup(syntax_node *path),
 
     // TODO(local): other identifier node types
 
@@ -313,6 +328,180 @@ enum syntax_token_kind
     typed_literal_nullptr(syntax_token literal), /* A literal nullptr with known type information. */
     /* A literal nullptr with known but invalid type information. The same functionality as bad_typed_literal_integer for nullptrs. */
     bad_typed_literal_nullptr(syntax_token literal),
+
+    // ===== Top Level nodes
+
+    /* #[if target.os == ::windows] */
+    annotation_conditional( syntax_token tkOpen
+                          , syntax_token tkIf
+                          , syntax_node *condition
+                          , syntax_token tkClose),
+
+    /* #[program_entry] */
+    annotation_identifier( syntax_token tkOpen
+                         , syntax_token identifier
+                         , syntax_token tkClose),
+
+    /* #[ */
+    annotation_only_open(syntax_token tkOpen),
+    /* #[] */
+    annotation_empty( syntax_token tkOpen
+                    , syntax_token tkClose),
+    /* #[namespace laye; */
+    annotation_invalid_unclosed( syntax_token tkOpen
+                               , syntax_token[] unparsedTokens),
+    /* #[1 + 2] */
+    annotation_invalid_closed( syntax_token tkOpen
+                             , syntax_token[] unparsedTokens
+                             , syntax_token tkClose),
+
+    annotation_identifier_unclosed( syntax_token tkOpen
+                                  , syntax_token identifier),
+
+    /* using laye::io; */
+    using_namespace( syntax_node *[] annotations
+                   , syntax_token tkUsing
+                   , syntax_node *path
+                   , syntax_token tkSemiColon),
+
+    /* using laye::io */
+    using_namespace_unfinished( syntax_node *[] annotations
+                              , syntax_token tkUsing
+                              , syntax_node *path),
+    /* using; */
+    using_namespace_empty( syntax_node *[] annotations
+                         , syntax_token tkUsing
+                         , syntax_token tkSemiColon),
+
+    /* namespace laye::io; */
+    namespace_unscoped( syntax_node *[] annotations
+                      , syntax_token tkNamespace
+                      , syntax_node *path
+                      , syntax_token tkSemiColon),
+
+    /* namespace; */
+    namespace_unscoped_empty( syntax_node *[] annotations
+                            , syntax_token tkNamespace
+                            , syntax_token tkSemiColon),
+    /* namespace laye::io */
+    namespace_unscoped_unfinished( syntax_node *[] annotations
+                                 , syntax_token tkNamespace
+                                 , syntax_node *path),
+
+    /* namespace laye::io { ... } */
+    namespace_scoped( syntax_node *[] annotations
+                    , syntax_token tkNamespace
+                    , syntax_node *path
+                    , syntax_token tkOpenScope
+                    , syntax_token tkCloseScope),
+
+    /* namespace laye::io { ... */
+    namespace_scoped_unfinished( syntax_node *[] annotations
+                               , syntax_token tkNamespace
+                               , syntax_node *path
+                               , syntax_token tkOpenScope),
+
+    binding_declaration( syntax_node *[] annotations
+                       , syntax_node *type
+                       , syntax_token name),
+
+    // ===== Modifiers
+
+    modifier_const(syntax_token tkConst),
+    modifier_readonly(syntax_token tkReadOnly),
+    modifier_writeonly(syntax_token tkWriteOnly),
+    modifier_public(syntax_token tkPublic),
+    modifier_private(syntax_token tkPrivate),
+    modifier_foreign(syntax_token tkForeign),
+    modifier_foreign_named(syntax_token tkForeign, syntax_token name),
+
+    /* callconv(cdecl) */
+    modifier_callconv_identifier( syntax_token tkCallConv
+                                , syntax_token tkOpenCallConv
+                                , syntax_token identifier
+                                , syntax_token tkCloseCallConv),
+
+    /* callconv(::cdecl) */
+    modifier_callconv_infer_variant( syntax_token tkCallConv
+                                   , syntax_token tkOpenCallConv
+                                   , syntax_token tkDelimiter
+                                   , syntax_token identifier
+                                   , syntax_token tkCloseCallConv),
+
+    /* callconv(calling_convention::cdecl) */
+    modifier_callconv_variant( syntax_token tkCallConv
+                             , syntax_token tkOpenCallConv
+                             , syntax_token variantName
+                             , syntax_token tkDelimiter
+                             , syntax_token identifier
+                             , syntax_token tkCloseCallConv),
+
+    /* callconv */
+    modifier_callconv_keyword_only(syntax_token tkCallConv),
+
+    /* callconv() */
+    modifier_callconv_empty( syntax_token tkCallConv
+                           , syntax_token tkOpenCallConv
+                           , syntax_token tkCloseCallConv),
+
+    /* callconv(cdecl */
+    modifier_callconv_unfinished( syntax_token tkCallConv
+                                , syntax_token tkOpenCallConv
+                                , syntax_token identifier),
+
+    /* callconv( */
+    modifier_callconv_unfinished_noname( syntax_token tkCallConv
+                                       , syntax_token tkOpenCallConv),
+
+    /* callconv(expression) */
+    /* If any of the correct constructions of calling convention fail, it rewinds and parses any expression for the sake of having a node */
+    modifier_callconv_expression( syntax_token tkCallConv
+                                , syntax_token tkOpenCallConv
+                                , syntax_node *expression
+                                , syntax_token tkCloseCallConv),
+
+    /* If the name of a calling convention variant is encountered in a modifier position and it can be guaranteed that it's intended to be
+     *   used as a modifier, then this node stores that error case. */
+    modifier_callconv_name_only(syntax_token tkCallConvName),
+
+    // ===== Statements
+
+    expression_statement(syntax_node *expression),
+
+    statement_empty_with_annotations_and_modifiers(syntax_node *[] annotations, syntax_node *[] modifiers),
+
+    // ===== Expressions
+
+    expression_unknown_token(syntax_token token),
+
+    // ===== Types
+
+    type_var(syntax_token tkVar),
+    type_void(syntax_token tkVoid),
+    type_bool(syntax_token tkBool),
+    type_int(syntax_token tkInt),
+    type_uint(syntax_token tkUInt),
+    type_float(syntax_token tkFloat),
+    type_string(syntax_token tkString),
+
+    type_pointer(syntax_node *elementType, syntax_token tkPointer),
+
+    type_empty,
+ }
+
+ bool syntax_node_type_contains_var(syntax_node *typeNode)
+ {
+    if (typeNode.kind is ::type_var)
+        return true;
+    else if (typeNode.kind is ::type_pointer typePointer)
+        return syntax_node_type_contains_var(typePointer.elementType);
+    else return false;
+ }
+
+ bool syntax_node_is_type(syntax_node *node)
+ {
+    // TODO(local): don't use string compares to check if it's a type
+    return string_start_equals("type_", nameof_variant(node.kind), 5);
  }
 
 /* ===== Symbols =====

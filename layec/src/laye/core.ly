@@ -32,13 +32,18 @@ enum calling_convention_kind
 
 void panic(string message)
 {
-    printf("%.*s%c", message.length, message.data, 10);
+    printf("panic!! %.*s%c", message.length, message.data, 10);
     abort();
 }
 
 void assert(bool test, string message)
 {
-    if (not test) panic(string_concat("assertion fail: ", message));
+    if (not test)
+    {
+        message = string_concat("assertion fail: ", message);
+        printf("%.*s%c", message.length, message.data, 10);
+        abort();
+    }
 }
 
 uint uint_num_digits(uint n)

@@ -81,12 +81,14 @@ void laye_main(string[] args)
     parser_data layeParser;
     parser_init(&layeParser, sourceFile, &diagnostics);
 
-    syntax_node[dynamic] nodes;
+    syntax_node *[dynamic] nodes;
     bool success = parser_read_all_laye_nodes(&layeParser, &nodes);
 
     if (success)
         printf("read %llu top level nodes from file successfully%c", nodes.length, 10);
-    else printf("failed to read top level nodes from file%c", 10);
+    //else printf("failed to read top level nodes from file%c", 10);
+
+    diagnostics_print(diagnostics);
     
     /*
     syntax_token[] sourceTokens = lexer_read_laye_tokens(sourceFile, &diagnostics);

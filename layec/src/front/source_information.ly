@@ -95,6 +95,21 @@ source_span source_span_create(source_location start, source_location end)
 	return result;
 }
 
+source_span source_span_combine(source_span a, source_span b)
+{
+	source_location startLocation;
+	if (a.startLocation.characterIndex < b.startLocation.characterIndex)
+		startLocation = a.startLocation;
+	else startLocation = b.startLocation;
+
+	source_location endLocation;
+	if (a.endLocation.characterIndex > b.endLocation.characterIndex)
+		endLocation = a.endLocation;
+	else endLocation = b.endLocation;
+
+	return source_span_create(startLocation, endLocation);
+}
+
 string source_span_name_get(source_span ss) { return source_location_name_get(ss.startLocation); }
 
 string source_span_to_string(source_span ss)

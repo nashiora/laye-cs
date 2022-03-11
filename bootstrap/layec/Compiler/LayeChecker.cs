@@ -729,6 +729,12 @@ internal sealed class LayeChecker
                 return new LayeCst.Break(breakStmt.SourceSpan);
             }
 
+            case LayeAst.Continue continueStmt:
+            {
+                // TODO(local): check break/continue targets
+                return new LayeCst.Continue(continueStmt.SourceSpan);
+            }
+
             case LayeAst.ExpressionStatement exprStmt:
             {
                 var expr = CheckExpression(exprStmt.Expression);

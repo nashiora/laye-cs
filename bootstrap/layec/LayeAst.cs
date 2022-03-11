@@ -272,8 +272,7 @@ internal abstract record class LayeAst(SourceSpan SourceSpan) : IHasSourceSpan
     public sealed record class Return(LayeToken.Keyword ReturnKeyword, Expr? ReturnValue)
         : Stmt(SourceSpan.Combine(ReturnKeyword, ReturnValue));
     public sealed record class Break(LayeToken.Keyword BreakKeyword, Expr? BreakValue) : Stmt(SourceSpan.Combine(BreakKeyword, BreakValue));
-    public sealed record class Continue(LayeToken.Keyword ContinueKeyword, LayeToken.Delimiter SemiColon)
-        : Stmt(new SourceSpan(ContinueKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
+    public sealed record class Continue(LayeToken.Keyword ContinueKeyword, Expr? ContinueValue) : Stmt(SourceSpan.Combine(ContinueKeyword, ContinueValue));
     public sealed record class Yield(LayeToken.Keyword YieldKeyword, Expr? BreakValue, LayeToken.Delimiter SemiColon)
         : Stmt(new SourceSpan(YieldKeyword.SourceSpan.StartLocation, SemiColon.SourceSpan.EndLocation));
     public sealed record class YieldBreak(LayeToken.Keyword YieldKeyword, LayeToken.Keyword BreakKeyword, LayeToken.Delimiter SemiColon)
