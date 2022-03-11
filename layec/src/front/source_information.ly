@@ -2,65 +2,65 @@
 
 struct source
 {
-	string name;
-	string text;
+    string name;
+    string text;
 
-	bool isValid;
+    bool isValid;
 }
 
 struct source_location
 {
-	source source;
+    source source;
 
-	uint characterIndex;
+    uint characterIndex;
 
-	uint lineNumber;
-	uint columnNumber;
+    uint lineNumber;
+    uint columnNumber;
 }
 
 struct source_span
 {
-	source_location startLocation;
-	source_location endLocation;
+    source_location startLocation;
+    source_location endLocation;
 }
 
 source source_create_from_file(string fileName)
 {
-	i32 SEEK_SET = 0;
-	i32 SEEK_END = 2;
+    i32 SEEK_SET = 0;
+    i32 SEEK_END = 2;
 
-	source resultSource;
-	resultSource.name = fileName;
+    source resultSource;
+    resultSource.name = fileName;
 
-	rawptr fileHandle = fopen(string_to_cstring(fileName), "rb");
-	if (fileHandle == nullptr)
-		return resultSource;
+    rawptr fileHandle = fopen(string_to_cstring(fileName), "rb");
+    if (fileHandle == nullptr)
+        return resultSource;
 
-	fseek(fileHandle, 0, SEEK_END);
-	i64 fileSize = ftell(fileHandle);
-	fseek(fileHandle, 0, SEEK_SET);
+    fseek(fileHandle, 0, SEEK_END);
+    i64 fileSize = ftell(fileHandle);
+    fseek(fileHandle, 0, SEEK_SET);
 
-	u8[*] fileBuffer = malloc(cast(uint) fileSize);
-	memset(fileBuffer, 0, cast(uint) fileSize);
+    u8[*] fileBuffer = malloc(cast(uint) fileSize);
+    memset(fileBuffer, 0, cast(uint) fileSize);
 
-	uint totalReadCount = fread(fileBuffer, cast(uint) fileSize, 1, fileHandle);
-	if (totalReadCount != cast(uint) fileSize)
-	{
-		if (ferror(fileHandle) != 0)
-		{
-			perror("the following error occurred while reading source file:");
-			fclose(fileHandle);
-			return resultSource;
-		}
-	}
+    uint totalReadCount = fread(fileBuffer, cast(uint) fileSize, 1, fileHandle);
+    if (totalReadCount != cast(uint) fileSize)
+    {
+        if (ferror(fileHandle) != 0)
+        {
+            perror("the following error occurred while reading source file:");
+            fclose(fileHandle);
+            return resultSource;
+        }
+    }
 
-	fclose(fileHandle);
+    fclose(fileHandle);
 
-	string sourceText = fileBuffer[:cast(uint) fileSize];
-	resultSource.text = sourceText;
-	resultSource.isValid = true;
+    string sourceText = fileBuffer[:cast(uint) fileSize];
+    resultSource.text = sourceText;
+    resultSource.isValid = true;
 
-	return resultSource;
+    return resultSource;
 }
 
 string source_location_name_get(source_location sl) { return sl.source.name; }
@@ -69,51 +69,51 @@ uint source_location_column_get(source_location sl) { return sl.columnNumber; }
 
 string source_location_to_string(source_location sl)
 {
-	string slName = source_location_name_get(sl);
+    string slName = source_location_name_get(sl);
 
-	uint lineDigitCount = uint_num_digits(source_location_line_get(sl));
-	uint colDigitCount = uint_num_digits(source_location_column_get(sl));
+    uint lineDigitCount = uint_num_digits(source_location_line_get(sl));
+    uint colDigitCount = uint_num_digits(source_location_column_get(sl));
 
-	string_builder sb;
-	string_builder_ensure_capacity(&sb, slName.length + lineDigitCount + colDigitCount + 2);
-	string_builder_append_string(&sb, slName);
-	string_builder_append_string(&sb, ":");
-	string_builder_append_uint(&sb, source_location_line_get(sl));
-	string_builder_append_string(&sb, ":");
-	string_builder_append_uint(&sb, source_location_column_get(sl));
+    string_builder sb;
+    string_builder_ensure_capacity(&sb, slName.length + lineDigitCount + colDigitCount + 2);
+    string_builder_append_string(&sb, slName);
+    string_builder_append_string(&sb, ":");
+    string_builder_append_uint(&sb, source_location_line_get(sl));
+    string_builder_append_string(&sb, ":");
+    string_builder_append_uint(&sb, source_location_column_get(sl));
 
-	string result = string_builder_to_string(sb);
-	string_builder_free(&sb);
-	return result;
+    string result = string_builder_to_string(sb);
+    string_builder_free(&sb);
+    return result;
 }
 
 source_span source_span_create(source_location start, source_location end)
 {
-	source_span result;
-	result.startLocation = start;
-	result.endLocation = end;
-	return result;
+    source_span result;
+    result.startLocation = start;
+    result.endLocation = end;
+    return result;
 }
 
 source_span source_span_combine(source_span a, source_span b)
 {
-	source_location startLocation;
-	if (a.startLocation.characterIndex < b.startLocation.characterIndex)
-		startLocation = a.startLocation;
-	else startLocation = b.startLocation;
+    source_location startLocation;
+    if (a.startLocation.characterIndex < b.startLocation.characterIndex)
+        startLocation = a.startLocation;
+    else startLocation = b.startLocation;
 
-	source_location endLocation;
-	if (a.endLocation.characterIndex > b.endLocation.characterIndex)
-		endLocation = a.endLocation;
-	else endLocation = b.endLocation;
+    source_location endLocation;
+    if (a.endLocation.characterIndex > b.endLocation.characterIndex)
+        endLocation = a.endLocation;
+    else endLocation = b.endLocation;
 
-	return source_span_create(startLocation, endLocation);
+    return source_span_create(startLocation, endLocation);
 }
 
 string source_span_name_get(source_span ss) { return source_location_name_get(ss.startLocation); }
 
 string source_span_to_string(source_span ss)
 {
-	string sourceText = ss.startLocation.source.text;
-	return sourceText[ss.startLocation.characterIndex:(ss.endLocation.characterIndex - ss.startLocation.characterIndex)];
+    string sourceText = ss.startLocation.source.text;
+    return sourceText[ss.startLocation.characterIndex:(ss.endLocation.characterIndex - ss.startLocation.characterIndex)];
 }
