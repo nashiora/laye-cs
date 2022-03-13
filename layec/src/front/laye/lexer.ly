@@ -319,6 +319,11 @@ syntax_token lexer_read_laye_token(lexer_data *l)
         }
         else token.kind = ::greater;
     }
+    else if (c == 63 /* ? */)
+    {
+        lexer_advance(l);
+        token.kind = ::question;
+    }
     else if (c == 91 /* [ */)
     {
         lexer_advance(l);
@@ -365,6 +370,7 @@ syntax_token lexer_read_laye_token(lexer_data *l)
     if (token.kind == nil)
     {
         lexer_advance(l);
+        token.kind = ::poison_token;
 
         string_builder errorBuilder;
         string_builder_append_string(&errorBuilder, "unrecognized character `");

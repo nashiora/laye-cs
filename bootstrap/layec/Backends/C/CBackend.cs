@@ -896,7 +896,7 @@ int main(int argc, char** argv) {{
             {
                 string tempName = $"ly_dyn_{m_uniqueIndexCounter++}";
 
-                builder.Append("ly_dynamic_t* ");
+                builder.Append("{ ly_dynamic_t* ");
                 builder.Append(tempName);
                 builder.Append(" = &(");
                 CompileExpression(builder, dynFreeStmt.TargetExpression);
@@ -905,7 +905,7 @@ int main(int argc, char** argv) {{
                 builder.AppendLine($"free(({tempName})->data);");
                 builder.AppendLine($"({tempName})->data = NULL;");
                 builder.AppendLine($"({tempName})->count = 0;");
-                builder.AppendLine($"({tempName})->capacity = 0;");
+                builder.AppendLine($"({tempName})->capacity = 0; }}");
             } break;
 
             case LayeCst.Block blockStmt:
@@ -1528,8 +1528,20 @@ int main(int argc, char** argv) {{
                             CompileExpression(builder, sliceExpr.OffsetExpression);
                         else builder.Append('0');
                         builder.Append(", ");
-                        Debug.Assert(sliceExpr.CountExpression is not null);
-                        CompileExpression(builder, sliceExpr.CountExpression!);
+                        if (sliceExpr.CountExpression is not null)
+                            CompileExpression(builder, sliceExpr.CountExpression);
+                        else
+                        {
+                            builder.Append('(');
+                            CompileExpression(builder, sliceExpr.TargetExpression);
+                            builder.Append(").count");
+                            if (sliceExpr.OffsetExpression is not null)
+                            {
+                                builder.Append("- (");
+                                CompileExpression(builder, sliceExpr.OffsetExpression);
+                                builder.Append(')');
+                            }
+                        }
                         builder.Append(')');
                     } break;
                 }

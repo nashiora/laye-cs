@@ -50,18 +50,3 @@ void parser_advance(parser_data *p)
     assert(currentIndex != p.lexer.currentIndex, "internal Laye lexer error: call to `lexer_read_syntax_token` did not consume any characters");
     assert(parser_current_token(p).kind != nil, "internal Laye lexer error: call to `lexer_read_syntax_token` returned a nil-kinded token");
 }
-
-syntax_node *syntax_node_alloc()
-{
-    syntax_node *result = cast(syntax_node *) malloc(sizeof(syntax_node));
-    
-    syntax_node zeroInit;
-    *result = zeroInit;
-    
-    return result;
-}
-
-void syntax_node_free(syntax_node *node)
-{
-    free(cast(rawptr) node);
-}

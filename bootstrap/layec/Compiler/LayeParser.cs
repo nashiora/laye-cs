@@ -1659,9 +1659,9 @@ internal sealed class LayeParser
                     return null;
                 }
 
-                if (postSliceArgs.Count != 1)
+                if (postSliceArgs.Count > 1)
                 {
-                    m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(postSliceArgs.ToArray()), "exactly one expression expected for slice count argument"));
+                    m_diagnostics.Add(new Diagnostic.Error(SourceSpan.Combine(postSliceArgs.ToArray()), "at most one expression expected for slice count argument"));
                     return null;
                 }
 
@@ -1671,7 +1671,7 @@ internal sealed class LayeParser
                     return null;
                 }
 
-                return ReadPrimaryExpressionSuffix(new LayeAst.Slice(primary, null, postSliceArgs[0]));
+                return ReadPrimaryExpressionSuffix(new LayeAst.Slice(primary, null, postSliceArgs.SingleOrDefault()));
             }
 
             if (!ReadCommaSeparatedExpressions("dynamic index", out var args))

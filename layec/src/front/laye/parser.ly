@@ -1,3 +1,14 @@
+enum laye_delimiter_kind
+{
+    comma,
+    semi_colon,
+
+    close_paren,
+
+    open_brace,
+    close_brace,
+}
+
 bool parser_read_all_laye_nodes(parser_data *p, syntax_node *[dynamic] *nodes)
 {
     if (not p.lexer.source.isValid)
@@ -25,7 +36,7 @@ bool parser_read_all_laye_nodes(parser_data *p, syntax_node *[dynamic] *nodes)
             return false;
         }
 
-        if (topLevelNode.kind is ::expression_statement expressionStatement)
+        if (topLevelNode.kind is ::statement_expression_unfinished expressionStatement)
         {
             if (expressionStatement.expression.kind is ::expression_unknown_token)
             {
@@ -239,7 +250,7 @@ syntax_node *parser_read_laye_namespace_path(parser_data *p, bool isExpression)
  * If any case that could probably be a type has an error it's assumed it's no longer a type and false is returned as long as the type isn't required.
  * If a type IS required then errors are treated as errors and a dummy type is returned to keep the parsing flowing.
  */
-bool parser_read_type_node_impl(parser_data *p, syntax_node **result, bool isRequired)
+bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool isRequired)
 {
     uint entryLexerPosition = p.lexer.currentIndex;
 
@@ -247,17 +258,115 @@ bool parser_read_type_node_impl(parser_data *p, syntax_node **result, bool isReq
     *result = typeNode;
     
     syntax_token tkCurrent = parser_current_token(p);
-    if (tkCurrent.kind is ::kw_void)
+    if (tkCurrent.kind is ::kw_var)
+    {
+        parser_advance(p); // `var`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_var(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_void)
     {
         parser_advance(p); // `void`
 
         typeNode.sourceSpan = tkCurrent.sourceSpan;
         typeNode.kind = ::type_void(tkCurrent);
     }
+    else if (tkCurrent.kind is ::kw_bool)
+    {
+        parser_advance(p); // `bool`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_bool(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_bool_sized sb)
+    {
+        parser_advance(p); // sized bool
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_bool_sized(tkCurrent, sb.size);
+    }
+    else if (tkCurrent.kind is ::kw_int)
+    {
+        parser_advance(p); // `int`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_int(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_int_sized si)
+    {
+        parser_advance(p); // sized int
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_int_sized(tkCurrent, si.size);
+    }
+    else if (tkCurrent.kind is ::kw_uint)
+    {
+        parser_advance(p); // `uint`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_uint(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_uint_sized su)
+    {
+        parser_advance(p); // sized uint
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_uint_sized(tkCurrent, su.size);
+    }
+    else if (tkCurrent.kind is ::kw_float)
+    {
+        parser_advance(p); // `float`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_float(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_float_sized sf)
+    {
+        parser_advance(p); // sized float
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_float_sized(tkCurrent, sf.size);
+    }
+    else if (tkCurrent.kind is ::kw_string)
+    {
+        parser_advance(p); // `string`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_string(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_rune)
+    {
+        parser_advance(p); // `rune`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_rune(tkCurrent);
+    }
+    else if (tkCurrent.kind is ::kw_rawptr)
+    {
+        parser_advance(p); // `rawptr`
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_rawptr(tkCurrent);
+    }
 
     if (typeNode.kind is not nil)
     {
-        if (not parser_read_type_node_suffix_impl(p, result, isRequired))
+        if (parser_current_token(p).kind is ::question)
+        {
+            syntax_token tkQuestion = parser_current_token(p);
+            parser_advance(p); // `?`
+
+            syntax_node *elementTypeNode = typeNode;
+        
+            typeNode = syntax_node_alloc();
+            *result = typeNode;
+
+            typeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkQuestion.sourceSpan);
+            typeNode.kind = ::type_nilable(elementTypeNode, tkQuestion);
+        }
+
+        if (not parser_read_laye_type_node_suffix_impl(p, result, isRequired))
         {
             if (not isRequired)
             {
@@ -287,31 +396,75 @@ bool parser_read_type_node_impl(parser_data *p, syntax_node **result, bool isReq
     }
 }
 
-bool parser_read_type_node_suffix_impl(parser_data *p, syntax_node **result, bool isRequired)
+bool parser_read_laye_type_node_suffix_impl(parser_data *p, syntax_node **result, bool isRequired)
 {
-    syntax_node *typeNode = *result;
+    syntax_node *[] modifiers = parser_read_laye_modifiers(p);
+
+    if (parser_current_token(p).kind is ::star)
+    {
+        syntax_token tkPointer = parser_current_token(p);
+        parser_advance(p); // `*`
+
+        syntax_node *elementTypeNode = *result;
+
+        syntax_node *pointerTypeNode = syntax_node_alloc();
+        *result = pointerTypeNode;
+
+        pointerTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkPointer.sourceSpan);
+        pointerTypeNode.kind = ::type_pointer(elementTypeNode, modifiers, tkPointer);
+
+        if (parser_current_token(p).kind is ::question)
+        {
+            syntax_token tkQuestion = parser_current_token(p);
+            parser_advance(p); // `?`
+
+            syntax_node *elementTypeNode = pointerTypeNode;
+        
+            syntax_node *nullableTypeNode = syntax_node_alloc();
+            *result = nullableTypeNode;
+
+            nullableTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkQuestion.sourceSpan);
+            nullableTypeNode.kind = ::type_nullable(elementTypeNode, tkQuestion);
+        }
+
+        return parser_read_laye_type_node_suffix_impl(p, result, isRequired);
+    }
+
+    if (modifiers.length > 0)
+    {
+        syntax_node *elementTypeNode = *result;
+
+        syntax_node *danglingTypeNode = syntax_node_alloc();
+        danglingTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, modifiers[modifiers.length - 1].sourceSpan);
+        danglingTypeNode.kind = ::type_dangling_modifiers(elementTypeNode, modifiers);
+
+        *result = danglingTypeNode;
+
+        diagnostics_add_error(p.diagnostics, ::syntax(danglingTypeNode), "expected container type syntax following type modifiers");
+    }
+
     return true;
 }
 
-syntax_node *parser_read_type_node(parser_data *p)
+syntax_node *parser_read_laye_type_node(parser_data *p)
 {
     syntax_node *typeNode;
-    bool hasValue = parser_read_type_node_impl(p, &typeNode, true);
-    assert(hasValue, "parser_read_type_node_impl should always return true if `isRequired` is set to true");
+    bool hasValue = parser_read_laye_type_node_impl(p, &typeNode, true);
+    assert(hasValue, "parser_read_laye_type_node_impl should always return true if `isRequired` is set to true");
     if (typeNode.kind is nil)
-        panic("parser_read_type_node_impl should never generate a nil when isRequired is true");
+        panic("parser_read_laye_type_node_impl should never generate a nil when isRequired is true");
     return typeNode;
 }
 
-bool parser_maybe_read_type_node(parser_data *p, syntax_node **result)
+bool parser_maybe_read_laye_type_node(parser_data *p, syntax_node **result)
 {
     syntax_node *typeNode = nullptr;
-    bool hasValue = parser_read_type_node_impl(p, &typeNode, false);
+    bool hasValue = parser_read_laye_type_node_impl(p, &typeNode, false);
     if (hasValue)
     {
-        assert(cast(rawptr) typeNode != nullptr, "parser_read_type_node_impl should never generate a nullptr if it returns true");
+        assert(cast(rawptr) typeNode != nullptr, "parser_read_laye_type_node_impl should never generate a nullptr if it returns true");
         if (typeNode.kind is nil)
-            panic("parser_read_type_node_impl should never generate a nil node if it returns true");
+            panic("parser_read_laye_type_node_impl should never generate a nil node if it returns true");
     }
 
     *result = typeNode;
@@ -507,7 +660,7 @@ syntax_node *parser_read_laye_top_level_declaration(parser_data *p)
     else
     {
         syntax_node *statement = parser_read_statement_with_annotations_and_modifiers(p, annotations, modifiers);
-        if (statement.kind is ::expression_statement)
+        if (statement.kind is ::statement_expression)
             diagnostics_add_error(p.diagnostics, ::syntax(statement), "expected a declaration at the top level, got an expression instead");
 
         return statement;
@@ -533,12 +686,71 @@ syntax_node *parser_read_statement_with_annotations_and_modifiers(
     syntax_node *[] annotations,
     syntax_node *[] modifiers)
 {
+    syntax_token tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::semi_colon)
+    {
+        syntax_node *resultEmpty = syntax_node_alloc();
+
+        resultEmpty.annotations = annotations;
+        resultEmpty.modifiers = modifiers;
+
+        syntax_token tkSemiColon = parser_current_token(p);
+        parser_advance(p); // `;`
+
+        resultEmpty.sourceSpan = tkSemiColon.sourceSpan;
+        resultEmpty.kind = ::statement_empty(tkSemiColon);
+
+        return resultEmpty;
+    }
+    else if (tkCurrent.kind is ::open_brace)
+    {
+        syntax_token tkOpenBlock = tkCurrent;
+        parser_advance(p); // `{`
+
+        syntax_node *[dynamic] blockNodeStorage;
+
+        while (not parser_is_eof(p) and not parser_check_laye_delimiter(p, ::close_brace))
+        {
+            syntax_node *stmt = parser_read_statement(p);
+            dynamic_append(blockNodeStorage, stmt);
+        }
+
+        syntax_node *[] blockNodes = blockNodeStorage[:];
+        if (blockNodeStorage.length > 0) dynamic_free(blockNodeStorage);
+
+        syntax_node *resultBlock = syntax_node_alloc();
+        
+        resultBlock.annotations = annotations;
+        resultBlock.modifiers = modifiers;
+
+        if (not parser_check_laye_delimiter(p, ::close_brace))
+        {
+            if (blockNodes.length > 0)
+                resultBlock.sourceSpan = source_span_combine(tkOpenBlock.sourceSpan, blockNodes[blockNodes.length - 1].sourceSpan);
+            else resultBlock.sourceSpan = tkOpenBlock.sourceSpan;
+
+            resultBlock.kind = ::statement_block_unfinished(tkOpenBlock, blockNodes);
+
+            diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "'}' expected to end block statement");
+        }
+        else
+        {
+            syntax_token tkCloseBlock = parser_current_token(p);
+            parser_advance(p); // `}`
+
+            resultBlock.sourceSpan = source_span_combine(tkOpenBlock.sourceSpan, tkCloseBlock.sourceSpan);
+            resultBlock.kind = ::statement_block(tkOpenBlock, blockNodes, tkCloseBlock);
+        }
+
+        return resultBlock;
+    }
+
     uint entryLexerPosition = p.lexer.currentIndex;
 
     syntax_node *typeNode;
-    if (parser_maybe_read_type_node(p, &typeNode))
+    if (parser_maybe_read_laye_type_node(p, &typeNode))
     {
-        syntax_token tkCurrent = parser_current_token(p);
+        tkCurrent = parser_current_token(p);
         if (tkCurrent.kind is ::laye_identifier)
         {
             parser_advance(p); // identifier
@@ -549,6 +761,8 @@ syntax_node *parser_read_statement_with_annotations_and_modifiers(
     p.lexer.currentIndex = entryLexerPosition;
 
     syntax_node *result = syntax_node_alloc();
+    result.annotations = annotations;
+    result.modifiers = modifiers;
 
     if (annotations.length > 0 or modifiers.length > 0)
     {
@@ -572,7 +786,7 @@ syntax_node *parser_read_statement_with_annotations_and_modifiers(
         }
 
         result.sourceSpan = source_span_combine(startSpan, endSpan);
-        result.kind = ::statement_empty_with_annotations_and_modifiers(annotations, modifiers);
+        result.kind = ::statement_empty_unfinished;
         
         if (annotations.length > 0 and modifiers.length > 0)
             diagnostics_add_error(p.diagnostics, ::syntax(result), "annotations and modifiers can only be applied to declarations");
@@ -585,8 +799,23 @@ syntax_node *parser_read_statement_with_annotations_and_modifiers(
 
     syntax_node *expression = parser_read_laye_expression(p);
 
-    result.sourceSpan = expression.sourceSpan;
-    result.kind = ::expression_statement(expression);
+    // TODO(local): check for things like assignment
+
+    if (parser_current_token(p).kind is ::semi_colon)
+    {
+        syntax_token tkSemiColon = parser_current_token(p);
+        parser_advance(p); // `;`
+
+        result.sourceSpan = source_span_combine(expression.sourceSpan, tkSemiColon.sourceSpan);
+        result.kind = ::statement_expression(expression, tkSemiColon);
+    }
+    else
+    {
+        result.sourceSpan = expression.sourceSpan;
+        result.kind = ::statement_expression_unfinished(expression);
+
+        diagnostics_add_error(p.diagnostics, ::syntax(result), "';' expected to terminate expression statement");
+    }
 
     return result;
 }
@@ -622,6 +851,7 @@ syntax_node *parser_read_laye_using(parser_data *p, syntax_node *[] annotations)
         panic("parser_read_laye_using called without `using` keyword");
 
     syntax_node *result = syntax_node_alloc();
+    result.annotations = annotations;
     // TODO(local): defer
     // defer return result;
 
@@ -633,7 +863,7 @@ syntax_node *parser_read_laye_using(parser_data *p, syntax_node *[] annotations)
         syntax_token semiColon = nextToken;
         parser_advance(p); // `;`
 
-        result.kind = ::using_namespace_empty(annotations, tkUsing, nextToken);
+        result.kind = ::using_namespace_empty(tkUsing, nextToken);
         result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
         
         diagnostics_add_error(p.diagnostics, ::syntax(result), "using statements must not be empty");
@@ -646,7 +876,7 @@ syntax_node *parser_read_laye_using(parser_data *p, syntax_node *[] annotations)
     nextToken = parser_current_token(p);
     if (nextToken.kind is not ::semi_colon)
     {
-        result.kind = ::using_namespace_unfinished(annotations, tkUsing, namespacePath);
+        result.kind = ::using_namespace_unfinished(tkUsing, namespacePath);
         result.sourceSpan = source_span_combine(startSpan, namespacePath.sourceSpan);
 
         diagnostics_add_error(p.diagnostics, ::token(nextToken), "expected ';' to end using statement");
@@ -655,7 +885,7 @@ syntax_node *parser_read_laye_using(parser_data *p, syntax_node *[] annotations)
     {
         parser_advance(p); // `;`
 
-        result.kind = ::using_namespace(annotations, tkUsing, namespacePath, nextToken);
+        result.kind = ::using_namespace(tkUsing, namespacePath, nextToken);
         result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
     }
 
@@ -678,6 +908,7 @@ syntax_node *parser_read_laye_namespace(parser_data *p, syntax_node *[] annotati
         panic("parser_read_laye_namespace called without `namespace` keyword");
 
     syntax_node *result = syntax_node_alloc();
+    result.annotations = annotations;
     // TODO(local): defer
     // defer return result;
 
@@ -689,7 +920,7 @@ syntax_node *parser_read_laye_namespace(parser_data *p, syntax_node *[] annotati
         syntax_token semiColon = nextToken;
         parser_advance(p); // `;`
 
-        result.kind = ::using_namespace_empty(annotations, tkNamespace, nextToken);
+        result.kind = ::using_namespace_empty(tkNamespace, nextToken);
         result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
         
         diagnostics_add_error(p.diagnostics, ::syntax(result), "using statements must not be empty");
@@ -704,7 +935,7 @@ syntax_node *parser_read_laye_namespace(parser_data *p, syntax_node *[] annotati
     {
         parser_advance(p); // `;`
 
-        result.kind = ::namespace_unscoped(annotations, tkNamespace, namespacePath, nextToken);
+        result.kind = ::namespace_unscoped(tkNamespace, namespacePath, nextToken);
         result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
     }
     else if (nextToken.kind is ::open_brace)
@@ -714,28 +945,39 @@ syntax_node *parser_read_laye_namespace(parser_data *p, syntax_node *[] annotati
 
         // TODO(local): parse top level namespace contents
         // TODO(local): parse top level namespace contents
-        // TODO(local): parse top level namespace contents
-        // TODO(local): parse top level namespace contents
+        syntax_node *[dynamic] namespaceNodeStorage;
 
-        nextToken = parser_current_token(p);
-        if (nextToken.kind is not ::close_brace)
+        while (not parser_is_eof(p) and not parser_check_laye_delimiter(p, ::close_brace))
         {
-            result.kind = ::namespace_scoped_unfinished(annotations, tkNamespace, namespacePath, tkOpenScope);
-            result.sourceSpan = source_span_combine(startSpan, tkOpenScope.sourceSpan);
+            syntax_node *stmt = parser_read_statement(p);
+            dynamic_append(namespaceNodeStorage, stmt);
+        }
 
-            diagnostics_add_error(p.diagnostics, ::token(nextToken), "expected '}' to end namespace scope");
+        syntax_node *[] namespaceNodes = namespaceNodeStorage[:];
+        if (namespaceNodeStorage.length > 0) dynamic_free(namespaceNodeStorage);
+
+        if (not parser_check_laye_delimiter(p, ::close_brace))
+        {
+            if (namespaceNodes.length > 0)
+                result.sourceSpan = source_span_combine(tkOpenScope.sourceSpan, namespaceNodes[namespaceNodes.length - 1].sourceSpan);
+            else result.sourceSpan = tkOpenScope.sourceSpan;
+
+            result.kind = ::namespace_scoped_unfinished(tkNamespace, namespacePath, tkOpenScope, namespaceNodes);
+
+            diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "'}' expected to end namespace scope");
         }
         else
         {
+            syntax_token tkCloseScope = parser_current_token(p);
             parser_advance(p); // `}`
 
-            result.kind = ::namespace_scoped(annotations, tkNamespace, namespacePath, tkOpenScope, nextToken);
-            result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
+            result.sourceSpan = source_span_combine(tkOpenScope.sourceSpan, tkCloseScope.sourceSpan);
+            result.kind = ::namespace_scoped(tkNamespace, namespacePath, tkOpenScope, namespaceNodes, tkCloseScope);
         }
     }
     else
     {
-        result.kind = ::namespace_unscoped_unfinished(annotations, tkNamespace, namespacePath);
+        result.kind = ::namespace_unscoped_unfinished(tkNamespace, namespacePath);
         result.sourceSpan = source_span_combine(startSpan, namespacePath.sourceSpan);
 
         diagnostics_add_error(p.diagnostics, ::syntax(result), "expected ';' to end namespace statement or '{' to open namespace scope");
@@ -762,14 +1004,81 @@ syntax_node *parser_read_laye_function_declaration(
     syntax_node *[] modifiers,
     syntax_node *typeNode,
     syntax_token tkName)
-{   
+{
+    if (parser_current_token(p).kind is not ::open_paren)
+        panic("assertion failed: parser_read_laye_function_declaration called when not at `(`");
+
     syntax_node *result = syntax_node_alloc();
+    result.annotations = annotations;
+    result.modifiers = modifiers;
 
     source_span startSpan = typeNode.sourceSpan;
     get_source_span_from_laye_annotations_and_modifiers(&startSpan, annotations, modifiers);
 
+    syntax_token tkOpenParams = parser_current_token(p);
+    parser_advance(p); // `(`
+
+    syntax_token[] paramDelimiters;
+    binding_data *[] parameters = parser_read_laye_bindings_delimited(p, ::comma, &paramDelimiters, false, ::close_paren);
+
+    syntax_token tkCloseParams = parser_current_token(p);
+    // NOTE(local): parser_read_laye_bindings_delimited does NOT consume the ending delimiter
+    if (tkCloseParams.kind is not ::close_paren)
+    {
+        result.sourceSpan = source_span_combine(startSpan, tkName.sourceSpan);
+        result.kind = ::function_declaration_unfinished(typeNode, tkName, tkOpenParams);
+
+        diagnostics_add_error(p.diagnostics, ::syntax(result), "expected ')' to close function paramter list");
+
+        return result;
+    }
+
+    parser_advance(p); // `)`
+
+    syntax_node *body;
+    if (   parser_check_laye_delimiter(p, ::semi_colon)
+        or parser_check_laye_delimiter(p, ::open_brace))
+    {
+        body = parser_read_statement(p);
+    }
+    else if (parser_current_token(p).kind is ::equal_greater)
+    {
+        syntax_token tkArrow = parser_current_token(p);
+        parser_advance(p); // `=>`
+
+        body = syntax_node_alloc();
+        syntax_node *expression = parser_read_laye_expression(p);
+
+        // TODO(local): check for things like assignment
+
+        if (parser_current_token(p).kind is ::semi_colon)
+        {
+            syntax_token tkSemiColon = parser_current_token(p);
+            parser_advance(p); // `;`
+
+            body.sourceSpan = source_span_combine(expression.sourceSpan, tkSemiColon.sourceSpan);
+            body.kind = ::statement_arrow_expression(tkArrow, expression, tkSemiColon);
+        }
+        else
+        {
+            body.sourceSpan = expression.sourceSpan;
+            body.kind = ::statement_arrow_expression_unfinished(tkArrow, expression);
+
+            diagnostics_add_error(p.diagnostics, ::syntax(body), "';' expected to terminate expression function body");
+        }
+    }
+    else
+    {
+        body = syntax_node_alloc();
+        body.sourceSpan = tkCloseParams.sourceSpan;
+        body.kind = ::statement_empty_unfinished;
+
+        diagnostics_add_error(p.diagnostics, ::syntax(body), "function body expected");
+    }
+
     result.sourceSpan = source_span_combine(startSpan, tkName.sourceSpan);
-    result.kind = ::binding_declaration(annotations, typeNode, tkName);
+    result.kind = ::function_declaration(typeNode, tkName, tkOpenParams,
+        parameters, paramDelimiters, tkCloseParams, body);
 
     return result;
 }
@@ -782,14 +1091,127 @@ syntax_node *parser_read_laye_binding_declaration(
     syntax_token tkName)
 {
     syntax_node *result = syntax_node_alloc();
+    result.annotations = annotations;
+    result.modifiers = modifiers;
 
     source_span startSpan = typeNode.sourceSpan;
     get_source_span_from_laye_annotations_and_modifiers(&startSpan, annotations, modifiers);
 
+    binding_data *data = binding_data_alloc();
+    data.modifiers = modifiers;
+    data.typeNode = typeNode;
+    data.name = tkName;
+
+    if (parser_current_token(p).kind is ::semi_colon)
+    {
+        syntax_token tkSemiColon = parser_current_token(p);
+        parser_advance(p); // `;`
+
+        result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
+        result.kind = ::binding_declaration(data, tkSemiColon);
+
+        return result;
+    }
+
     result.sourceSpan = source_span_combine(startSpan, tkName.sourceSpan);
-    result.kind = ::binding_declaration(annotations, typeNode, tkName);
+    result.kind = ::binding_declaration_unfinished(data);
 
     return result;
+}
+
+bool parser_check_laye_delimiter(parser_data *p, laye_delimiter_kind delimiter)
+{
+    if (delimiter == laye_delimiter_kind::comma)
+    {
+        if (parser_current_token(p).kind is ::comma)
+            return true;
+    }
+    else if (delimiter == laye_delimiter_kind::semi_colon)
+    {
+        if (parser_current_token(p).kind is ::semi_colon)
+            return true;
+    }
+    else if (delimiter == laye_delimiter_kind::close_paren)
+    {
+        if (parser_current_token(p).kind is ::close_paren)
+            return true;
+    }
+    else if (delimiter == laye_delimiter_kind::open_brace)
+    {
+        if (parser_current_token(p).kind is ::open_brace)
+            return true;
+    }
+    else if (delimiter == laye_delimiter_kind::close_brace)
+    {
+        if (parser_current_token(p).kind is ::close_brace)
+            return true;
+    }
+
+    return false;
+}
+
+binding_data *[] parser_read_laye_bindings_delimited(parser_data *p, laye_delimiter_kind delimiter, syntax_token[] *delimiters, bool allowTrailingDelimiter, laye_delimiter_kind closingDelimiter)
+{
+    binding_data *[dynamic] bindings;
+    if (parser_check_laye_delimiter(p, closingDelimiter))
+        return bindings[:0];
+
+    syntax_token[dynamic] delimiterBuffer;
+
+    while (not parser_is_eof(p) and not parser_check_laye_delimiter(p, closingDelimiter))
+    {
+        binding_data *binding = binding_data_alloc();
+        dynamic_append(bindings, binding);
+
+        if (parser_check_laye_delimiter(p, delimiter))
+        {
+            syntax_token tkDelimiter = parser_current_token(p);
+
+            // TODO(local): better errors on delimiters
+            // TODO(local): better errors on delimiters
+            diagnostics_add_error(p.diagnostics, ::token(tkDelimiter), "expected binding information (either a type or modifiers,) but got a delimiter instead");
+
+            dynamic_append(delimiterBuffer, tkDelimiter);
+            parser_advance(p); // delimiter
+
+            continue;
+        }
+
+        binding.modifiers = parser_read_laye_modifiers(p);
+        binding.typeNode = parser_read_laye_type_node(p);
+
+        if (parser_current_token(p).kind is ::laye_identifier)
+        {
+            binding.name = parser_current_token(p);
+            parser_advance(p); // binding name
+        }
+        // TODO(local): better errors on delimiters
+        // TODO(local): better errors on delimiters
+        else diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "expected identifier for binding name");
+
+        if (not parser_check_laye_delimiter(p, delimiter))
+            break;
+
+        dynamic_append(delimiterBuffer, parser_current_token(p));
+        parser_advance(p); // delimiter
+
+        if (parser_check_laye_delimiter(p, closingDelimiter))
+        {
+            // TODO(local): better errors on delimiters
+            // TODO(local): better errors on delimiters
+            if (not allowTrailingDelimiter)
+                diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "trailing delimiters are not allowed in this context");
+        }
+    }
+
+    // TODO(local): better errors on delimiters
+    // TODO(local): better errors on delimiters
+    //if (not parser_check_laye_delimiter(p, closingDelimiter))
+    //    diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "expected delimiter to close bindings");
+    //else parser_advance(p); // closing delimiter
+
+    *delimiters = delimiterBuffer[:delimiterBuffer.length];
+    return bindings[:bindings.length];
 }
 
 void get_source_span_from_laye_annotations_and_modifiers(source_span *result, syntax_node *[] annotations, syntax_node *[] modifiers)

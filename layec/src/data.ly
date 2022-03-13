@@ -253,13 +253,63 @@ enum syntax_token_kind
  *
  */
 
+/* This does not contain a symbol_type_ref because it will be transformed into a symbol later */
+struct binding_data
+{
+    syntax_node *[] modifiers;
+
+    syntax_node *typeNode;
+    syntax_token name;
+
+    syntax_token tkAssignment;
+    syntax_node *value;
+}
+
+binding_data *binding_data_alloc()
+{
+    binding_data *result = cast(binding_data *) malloc(sizeof(binding_data));
+    
+    binding_data zeroInit;
+    *result = zeroInit;
+    
+    return result;
+}
+
+void binding_data_free(binding_data *node)
+{
+    free(cast(rawptr) node);
+}
+
 struct syntax_node
 {
     source_span sourceSpan;
+
+    syntax_node *[] annotations;
+    syntax_node *[] modifiers;
+
     symbol_type_ref typeRef; /* typeRef will be invalid for non-expression nodes or nodes with no yet-resolved type. */
+
     syntax_node_kind kind;
 }
 
+syntax_node *syntax_node_alloc()
+{
+    syntax_node *result = cast(syntax_node *) malloc(sizeof(syntax_node));
+    
+    syntax_node zeroInit;
+    *result = zeroInit;
+    
+    return result;
+}
+
+void syntax_node_free(syntax_node *node)
+{
+    free(cast(rawptr) node);
+}
+
+/* Many of the variants of syntax_node_kind are erroneous and only exist to provide better error message
+ *   and attempt to continue parsing and checking the program and maybe provide use to a language server in the future.
+ */
 enum syntax_node_kind
 {
     // ===== Identifier Nodes
@@ -359,51 +409,58 @@ enum syntax_node_kind
                                   , syntax_token identifier),
 
     /* using laye::io; */
-    using_namespace( syntax_node *[] annotations
-                   , syntax_token tkUsing
+    using_namespace( syntax_token tkUsing
                    , syntax_node *path
                    , syntax_token tkSemiColon),
 
     /* using laye::io */
-    using_namespace_unfinished( syntax_node *[] annotations
-                              , syntax_token tkUsing
+    using_namespace_unfinished( syntax_token tkUsing
                               , syntax_node *path),
     /* using; */
-    using_namespace_empty( syntax_node *[] annotations
-                         , syntax_token tkUsing
+    using_namespace_empty( syntax_token tkUsing
                          , syntax_token tkSemiColon),
 
     /* namespace laye::io; */
-    namespace_unscoped( syntax_node *[] annotations
-                      , syntax_token tkNamespace
+    namespace_unscoped( syntax_token tkNamespace
                       , syntax_node *path
                       , syntax_token tkSemiColon),
 
     /* namespace; */
-    namespace_unscoped_empty( syntax_node *[] annotations
-                            , syntax_token tkNamespace
+    namespace_unscoped_empty( syntax_token tkNamespace
                             , syntax_token tkSemiColon),
     /* namespace laye::io */
-    namespace_unscoped_unfinished( syntax_node *[] annotations
-                                 , syntax_token tkNamespace
+    namespace_unscoped_unfinished( syntax_token tkNamespace
                                  , syntax_node *path),
 
     /* namespace laye::io { ... } */
-    namespace_scoped( syntax_node *[] annotations
-                    , syntax_token tkNamespace
+    namespace_scoped( syntax_token tkNamespace
                     , syntax_node *path
                     , syntax_token tkOpenScope
+                    , syntax_node *[] nodes
                     , syntax_token tkCloseScope),
 
     /* namespace laye::io { ... */
-    namespace_scoped_unfinished( syntax_node *[] annotations
-                               , syntax_token tkNamespace
+    namespace_scoped_unfinished( syntax_token tkNamespace
                                , syntax_node *path
-                               , syntax_token tkOpenScope),
+                               , syntax_token tkOpenScope
+                               , syntax_node *[] nodes),
 
-    binding_declaration( syntax_node *[] annotations
-                       , syntax_node *type
-                       , syntax_token name),
+    binding_declaration( binding_data *data
+                       , syntax_token tkSemiColon),
+
+    binding_declaration_unfinished(binding_data *data),
+
+    function_declaration( syntax_node *type
+                        , syntax_token name
+                        , syntax_token tkOpenParams
+                        , binding_data *[] parameters
+                        , syntax_token[] tkParameterDelims
+                        , syntax_token tkCloseParams
+                        , syntax_node *body),
+
+    function_declaration_unfinished( syntax_node *type
+                                   , syntax_token name
+                                   , syntax_token tkOpenParams),
 
     // ===== Modifiers
 
@@ -466,9 +523,17 @@ enum syntax_node_kind
 
     // ===== Statements
 
-    expression_statement(syntax_node *expression),
+    statement_expression(syntax_node *expression, syntax_token tkSemiColon),
+    statement_arrow_expression(syntax_token tkArrow, syntax_node *expression, syntax_token tkSemiColon),
 
-    statement_empty_with_annotations_and_modifiers(syntax_node *[] annotations, syntax_node *[] modifiers),
+    statement_expression_unfinished(syntax_node *expression),
+    statement_arrow_expression_unfinished(syntax_token tkArrow, syntax_node *expression),
+
+    statement_empty(syntax_token tkSemiColon),
+    statement_empty_unfinished,
+
+    statement_block(syntax_token tkOpenBlock, syntax_node *[] nodes, syntax_token tkCloseBlock),
+    statement_block_unfinished(syntax_token tkOpenBlock, syntax_node *[] nodes),
 
     // ===== Expressions
 
@@ -479,14 +544,31 @@ enum syntax_node_kind
     type_var(syntax_token tkVar),
     type_void(syntax_token tkVoid),
     type_bool(syntax_token tkBool),
+    type_bool_sized(syntax_token tkBool, u16 size),
     type_int(syntax_token tkInt),
+    type_int_sized(syntax_token tkInt, u16 size),
     type_uint(syntax_token tkUInt),
+    type_uint_sized(syntax_token tkUInt, u16 size),
     type_float(syntax_token tkFloat),
+    type_float_sized(syntax_token tkFloat, u16 size),
     type_string(syntax_token tkString),
+    type_rune(syntax_token tkRune),
+    type_rawptr(syntax_token tkRune),
 
-    type_pointer(syntax_node *elementType, syntax_token tkPointer),
+    type_named(syntax_token typeName),
+
+    type_nilable(syntax_node *typeNode, syntax_token tkQuestion),
+    type_nullable(syntax_node *typeNode, syntax_token tkQuestion),
+
+    type_pointer(syntax_node *elementTypeNode, syntax_node *[] modifiers, syntax_token tkPointer),
+    type_buffer( syntax_node *elementTypeNode
+               , syntax_node *[] modifiers
+               , syntax_token tkOpenBuffer
+               , syntax_token tkBuffer
+               , syntax_token tkCloseBuffer),
 
     type_empty,
+    type_dangling_modifiers(syntax_node *elementTypeNode, syntax_node *[] modifiers),
 }
 
 bool syntax_node_type_contains_var(syntax_node *typeNode)
@@ -494,7 +576,9 @@ bool syntax_node_type_contains_var(syntax_node *typeNode)
     if (typeNode.kind is ::type_var)
         return true;
     else if (typeNode.kind is ::type_pointer typePointer)
-        return syntax_node_type_contains_var(typePointer.elementType);
+        return syntax_node_type_contains_var(typePointer.elementTypeNode);
+    else if (typeNode.kind is ::type_buffer typeBuffer)
+        return syntax_node_type_contains_var(typeBuffer.elementTypeNode);
     else return false;
 }
 

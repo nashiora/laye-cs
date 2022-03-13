@@ -1528,11 +1528,13 @@ internal sealed class LayeChecker
 
                     case SymbolType.Dynamic dynamicType:
                     {
+                        /*
                         if (countExpr is null)
                         {
                             m_diagnostics.Add(new Diagnostic.Error(targetExpr.SourceSpan, "cannot slice dynamic type without a count"));
                             return null;
                         }
+                        */
 
                         m_diagnostics.Add(new Diagnostic.Warning(targetExpr.SourceSpan, "since the memory of a dynamic can move during appends, slicing a dynamic creates a copy of its contents"));
                         elementType = dynamicType.ElementType;
