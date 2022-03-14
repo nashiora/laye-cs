@@ -115,6 +115,14 @@ enum syntax_trivia_kind
 enum syntax_token_kind
 {
     eof,
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
+    // TODO(local): remove poison_token
     poison_token,
 
     laye_identifier(string image), // the image should be the same as `source_span_to_string(token.sourceSpan)`, but we don't want to recompute that all the time
