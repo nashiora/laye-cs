@@ -126,6 +126,9 @@ enum syntax_token_kind
     literal_string(string value),
     literal_rune(i32 value),
 
+    literal_string_unfinished,
+    literal_rune_unfinished,
+
     /*
      * TODO(local): figure out how to handle interpolated strings. below is an example of how I think I'd do C# style interpolation
      * If split up like this into completely separate tokens, the lexer needs to be able to return multiple tokens or access the token storage directly, so
@@ -657,6 +660,11 @@ enum syntax_node_kind
                    , syntax_token tkOpenArray
                    , syntax_node *[] indexTypeNodes
                    , syntax_token tkCloseArray),
+
+    type_tuple( syntax_token tkOpen
+              , binding_data *[] fields
+              , syntax_token[] delimiters
+              , syntax_token tkClose),
 
     type_empty,
     type_dangling_modifiers(syntax_node *elementTypeNode, syntax_node *[] modifiers),

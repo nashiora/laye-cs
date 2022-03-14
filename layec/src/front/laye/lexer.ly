@@ -224,6 +224,8 @@ syntax_token lexer_read_laye_token(lexer_data *l)
         }
         else token.kind = ::amp;
     }
+    else if (c == 39 /* ' */)
+        lexer_read_laye_rune(l, &token);
     else if (c == 40 /* ( */)
     {
         lexer_advance(l);
@@ -803,6 +805,11 @@ i32 lexer_read_laye_escape_sequence_to_rune(lexer_data *l)
 
         return codepointValue;
     }
+    else if (c == 48 /* 0 */)
+    {
+        lexer_advance(l); // `0`
+        return 0 /* \0 */;
+    }
     else if (c == 97 /* a */)
     {
         lexer_advance(l); // `a`
@@ -866,12 +873,52 @@ i32 lexer_read_laye_escape_sequence_to_rune(lexer_data *l)
     }
 }
 
+void lexer_read_laye_rune(lexer_data *l, syntax_token *token)
+{
+    assert(lexer_current_rune(*l) == 39 /* ' */, "lexer_read_laye_rune called without quote char");
+    
+    source_location startLocation = lexer_current_location(*l);
+    lexer_advance(l); // `'`
+
+    i32 runeValue;
+    if (lexer_current_rune(*l) == 92 /* \ */)
+        runeValue = lexer_read_laye_escape_sequence_to_rune(l);
+    else if (lexer_current_rune(*l) != 39 /* ' */)
+    {
+        runeValue = lexer_current_rune(*l);
+        lexer_advance(l); // the rune
+    }
+    else // lexer_current_rune(*l) == 39 /* ' */
+    {
+        lexer_advance(l); // `'`
+
+        token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+        token.kind = ::literal_rune_unfinished;
+
+        diagnostics_add_error(l.diagnostics, ::token(*token), "empty rune literal");
+        return;
+    }
+
+    if (lexer_current_rune(*l) == 39 /* ' */)
+    {
+        lexer_advance(l); // `'`
+        token.kind = ::literal_rune(runeValue);
+    }
+    else
+    {
+        token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+        token.kind = ::literal_rune_unfinished;
+
+        diagnostics_add_error(l.diagnostics, ::token(*token), "unfinished rune literal");
+    }
+}
+
 void lexer_read_laye_string(lexer_data *l, syntax_token *token)
 {
     assert(lexer_current_rune(*l) == 34 /* " */, "lexer_read_laye_string called without quote char");
-    lexer_advance(l); // `"`
 
     source_location startLocation = lexer_current_location(*l);
+    lexer_advance(l); // `"`
 
     string_builder sb;
     while (not lexer_is_eof(*l) and lexer_current_rune(*l) != 34 /* " */)
@@ -895,12 +942,13 @@ void lexer_read_laye_string(lexer_data *l, syntax_token *token)
         lexer_advance(l); // `"`
         string stringValue = string_builder_to_string(sb);
         token.kind = ::literal_string(stringValue);
-        //printf(">> %.*s%c", stringValue.length, stringValue.data, 10);
         string_builder_free(&sb);
     }
     else
     {
-        string locationString = source_location_to_string(startLocation);
-        printf("%.*s: error: unfinished string literal%c", locationString.length, locationString.data, 10);
+        token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
+        token.kind = ::literal_string_unfinished;
+
+        diagnostics_add_error(l.diagnostics, ::token(*token), "unfinished string literal");
     }
 }

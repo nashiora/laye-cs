@@ -5,6 +5,7 @@ namespace hello;
 #[program_entry]
 void main()
 {
+    rune test = '\0';
     console::write_string("Hello, hunter!\n");
 }
 
