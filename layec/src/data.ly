@@ -373,6 +373,8 @@ enum syntax_node_kind
     /* A literal nullptr with known but invalid type information. The same functionality as bad_typed_literal_integer for nullptrs. */
     bad_typed_literal_nullptr(syntax_token literal),
 
+    literal_context(syntax_token literal),
+
     // ===== Top Level nodes
 
     /* #[if target.os == ::windows] */
@@ -468,6 +470,7 @@ enum syntax_node_kind
     // ===== Modifiers
 
     modifier_const(syntax_token tkConst),
+    modifier_inline(syntax_token tkInline),
     modifier_readonly(syntax_token tkReadOnly),
     modifier_writeonly(syntax_token tkWriteOnly),
     modifier_public(syntax_token tkPublic),
@@ -538,7 +541,15 @@ enum syntax_node_kind
     statement_block(syntax_token tkOpenBlock, syntax_node *[] nodes, syntax_token tkCloseBlock),
     statement_block_unfinished(syntax_token tkOpenBlock, syntax_node *[] nodes),
 
-    // ===== Expressions
+    statement_if( syntax_token tkIf
+                , syntax_token tkOpenCondition
+                , syntax_node *condition
+                , syntax_token tkCloseCondition
+                , syntax_node *passBody),
+
+    statement_return(syntax_token tkReturn, syntax_token tkSemiColon),
+
+    // ===== Primary Expressions
 
     expression_eof,
     expression_missing,
@@ -596,6 +607,14 @@ enum syntax_node_kind
     expression_explicit_cast_missing_type( syntax_token tkCast
                                          , syntax_node *expression),
 
+    // ===== Compound Expressions
+
+    expression_logical_and(syntax_node *left, syntax_token tkOperator, syntax_node *right),
+    expression_logical_or(syntax_node *left, syntax_token tkOperator, syntax_node *right),
+    expression_logical_xor(syntax_node *left, syntax_token tkOperator, syntax_node *right),
+
+    expression_compare_equal(syntax_node *left, syntax_token tkOperator, syntax_node *right),
+
     // ===== Types
 
     type_var(syntax_token tkVar),
@@ -610,7 +629,8 @@ enum syntax_node_kind
     type_float_sized(syntax_token tkFloat, u16 size),
     type_string(syntax_token tkString),
     type_rune(syntax_token tkRune),
-    type_rawptr(syntax_token tkRune),
+    type_rawptr(syntax_token tkRawptr),
+    type_noreturn(syntax_token tkNoreturn),
 
     type_named(syntax_node *path),
 
