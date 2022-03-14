@@ -124,6 +124,7 @@ enum syntax_token_kind
     literal_float(float value),
     literal_character(i32 value),
     literal_string(string value),
+    literal_rune(i32 value),
 
     /*
      * TODO(local): figure out how to handle interpolated strings. below is an example of how I think I'd do C# style interpolation
@@ -314,24 +315,14 @@ enum syntax_node_kind
 {
     // ===== Identifier Nodes
 
-    /* This is not an error during parsing. Represents an identifier with no yet-known meaning.
-     * If this node cannot be replaced with a resolved identifier node during checking then an unresolved identifier error is issued. */
-    identifier_unresolved(syntax_token identifier),
-
     /* Simply represents the `global` keyword. */
     identifier_global(syntax_token identifier),
 
     /* a::b:c.d */
     /* Note that it can optionally have invalid separators if the parser thinks they're mistakes. */
-    namespace_path(syntax_token[] identifiers, syntax_token[] separators),
+    namespace_path(syntax_node *[] identifiers, syntax_token[] separators),
     /* The parser wanted a path, no path-related tokens were found */
     namespace_path_empty,
-
-    /* global::win32::INVALID_HANDLE_VALUE */
-    /* Note that this is just arbitrary syntax in the same form as a namespace path.
-     * This can later be resolved to be part namespace path and part symbol lookup inside that
-     *   namespace or even a union variant constructor. */
-    namespace_lookup(syntax_node *path),
 
     // TODO(local): other identifier node types
 
@@ -448,6 +439,15 @@ enum syntax_node_kind
     binding_declaration( binding_data *data
                        , syntax_token tkSemiColon),
 
+    binding_declaration_and_assignment( binding_data *data
+                                      , syntax_token tkAssign
+                                      , syntax_node *value
+                                      , syntax_token tkSemiColon),
+
+    binding_declaration_and_assignment_unfinished( binding_data *data
+                                                 , syntax_token tkAssign
+                                                 , syntax_node *value),
+
     binding_declaration_unfinished(binding_data *data),
 
     function_declaration( syntax_node *type
@@ -537,7 +537,61 @@ enum syntax_node_kind
 
     // ===== Expressions
 
+    expression_eof,
+    expression_missing,
+
     expression_unknown_token(syntax_token token),
+
+    /* This is not an error during parsing. Represents an identifier with no yet-known meaning.
+     * If this node cannot be replaced with a resolved identifier node during checking then an unresolved identifier error is issued. */
+    expression_identifier_unresolved(syntax_token identifier),
+    expression_identifier_global(syntax_token identifier),
+
+    /* global::win32::INVALID_HANDLE_VALUE */
+    /* Note that this is just arbitrary syntax in the same form as a namespace path.
+     * This can later be resolved to be part namespace path and part symbol lookup inside that
+     *   namespace or even a union variant constructor. */
+    expression_lookup(syntax_node *path),
+
+    expression_static_named_index( syntax_node *target
+                                 , syntax_token tkDot
+                                 , syntax_token fieldName),
+
+    expression_static_named_index_unfinished( syntax_node *target , syntax_token tkDot),
+
+    expression_invoke( syntax_node *target
+                     , syntax_token tkOpenParen
+                     , syntax_node *[] arguments
+                     , syntax_token[] tkDelimiters
+                     , syntax_token tkCloseParen),
+
+    expression_invoke_unfinished( syntax_node *target
+                                , syntax_token tkOpenParen
+                                , syntax_node *[] arguments
+                                , syntax_token[] tkDelimiters),
+
+    expression_grouped(syntax_token tkOpen, syntax_node *expression, syntax_token tkClose),
+    expression_grouped_unfinished(syntax_token tkOpen, syntax_node *expression),
+
+    expression_logical_not(syntax_token tkNot, syntax_node *target),
+    expression_negate(syntax_token tkMinus, syntax_node *target),
+    expression_complement(syntax_token tkTilde, syntax_node *target),
+    expression_address_of(syntax_token tkAmp, syntax_node *target),
+    expression_dereference(syntax_token tkStar, syntax_node *target),
+
+    expression_explicit_cast( syntax_token tkCast
+                            , syntax_token tkOpenType
+                            , syntax_node *typeNode
+                            , syntax_token tkCloseType
+                            , syntax_node *expression),
+
+    expression_explicit_cast_unfinished( syntax_token tkCast
+                                       , syntax_token tkOpen
+                                       , syntax_node *typeNode
+                                       , syntax_node *expression),
+
+    expression_explicit_cast_missing_type( syntax_token tkCast
+                                         , syntax_node *expression),
 
     // ===== Types
 
@@ -555,17 +609,54 @@ enum syntax_node_kind
     type_rune(syntax_token tkRune),
     type_rawptr(syntax_token tkRune),
 
-    type_named(syntax_token typeName),
+    type_named(syntax_node *path),
 
     type_nilable(syntax_node *typeNode, syntax_token tkQuestion),
+    /* Note that only pointers and buffers can be compared to `nullptr`.
+     * They also still receive the same pattern matching and monadic nature of nilable types. */ 
     type_nullable(syntax_node *typeNode, syntax_token tkQuestion),
 
     type_pointer(syntax_node *elementTypeNode, syntax_node *[] modifiers, syntax_token tkPointer),
+    
     type_buffer( syntax_node *elementTypeNode
                , syntax_node *[] modifiers
                , syntax_token tkOpenBuffer
                , syntax_token tkBuffer
                , syntax_token tkCloseBuffer),
+
+    type_buffer_unfinished( syntax_node *elementTypeNode
+                          , syntax_node *[] modifiers
+                          , syntax_token tkOpenBuffer
+                          , syntax_token tkBuffer),
+
+    type_slice( syntax_node *elementTypeNode
+              , syntax_node *[] modifiers
+              , syntax_token tkOpenSlice
+              , syntax_token tkCloseSlice),
+    
+    type_list( syntax_node *elementTypeNode
+             , syntax_node *[] modifiers
+             , syntax_token tkOpenList
+             , syntax_token tkDynamic
+             , syntax_token tkCloseList),
+
+    type_ambiguous_container( syntax_node *elementTypeNode
+                            , syntax_node *[] modifiers
+                            , syntax_token tkOpenArray
+                            , syntax_node *[] anyNodes
+                            , syntax_token tkCloseArray),
+
+    type_array( syntax_node *elementTypeNode
+              , syntax_node *[] modifiers
+              , syntax_token tkOpenArray
+              , syntax_node *[] arrayLengths
+              , syntax_token tkCloseArray),
+
+    type_dictionary( syntax_node *elementTypeNode
+                   , syntax_node *[] modifiers
+                   , syntax_token tkOpenArray
+                   , syntax_node *[] indexTypeNodes
+                   , syntax_token tkCloseArray),
 
     type_empty,
     type_dangling_modifiers(syntax_node *elementTypeNode, syntax_node *[] modifiers),
