@@ -566,6 +566,8 @@ enum syntax_node_kind
      * This can later be resolved to be part namespace path and part symbol lookup inside that
      *   namespace or even a union variant constructor. */
     expression_lookup(syntax_node *path),
+    /* ::variant */
+    expression_lookup_implicit(syntax_token tkLeadingDelimiter, syntax_token name),
 
     expression_static_named_index( syntax_node *target
                                  , syntax_token tkDot

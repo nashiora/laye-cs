@@ -8,7 +8,7 @@ noreturn main()
     console::write_string("Hello, hunter!\n");
 }
 
-#[if target.os/* == ::windows*/]
+#[if target.os == ::windows]
 namespace win32
 {
     const rawptr INVALID_HANDLE_VALUE = cast(rawptr) -1;
@@ -26,7 +26,7 @@ namespace win32
     rawptr get_std_handle(i32 nStdHandle);
 }
 
-#[if target.os/* == ::windows*/]
+#[if target.os == ::windows]
 namespace laye::console
 {
     void write_string(string message)

@@ -1551,6 +1551,31 @@ syntax_node *parser_read_laye_primary_expression(parser_data *p)
         result.sourceSpan = tkCurrent.sourceSpan;
         result.kind = ::literal_context(tkCurrent);
     }
+    else if (tkCurrent.kind is ::colon_colon)
+    {
+        syntax_token tkLeadingDelimiter = tkCurrent;
+        parser_advance(p); // `::`
+
+        syntax_token name;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::laye_identifier)
+        {
+            name = tkCurrent;
+            parser_advance(p); // laye identifier
+        }
+        else
+        {
+            source_location location = tkCurrent.sourceSpan.startLocation;
+            name.sourceSpan = source_span_create(location, location);
+            name.kind = ::poison_token;
+
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "identifier expected");
+        }
+
+        result.sourceSpan = source_span_combine(tkLeadingDelimiter.sourceSpan, name.sourceSpan);
+        result.kind = ::expression_lookup_implicit(tkCurrent, name);
+    }
     else if (tkCurrent.kind is ::open_paren)
     {
         syntax_token tkOpenGrouped = tkCurrent;
