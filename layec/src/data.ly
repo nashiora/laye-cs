@@ -216,6 +216,7 @@ enum syntax_token_kind
     kw_int_least_sized(u16 size), kw_uint_least_sized(u16 size),
     kw_bool, kw_float,
     kw_bool_sized(u16 size), kw_float_sized(u16 size),
+    kw_bool_least_sized(u16 size),
     kw_rune, kw_string,
     kw_rawptr, kw_dynamic,
     kw_noreturn, kw_varargs,

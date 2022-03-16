@@ -505,6 +505,12 @@ syntax_token_kind get_laye_keyword_kind(lexer_data *l, string image)
             return ::kw_bool;
         else if (string_equals(image, "break"))
             return ::kw_break;
+        else if (string_start_equals(image, "bleast", 6))
+        {
+            u16 suffixValue = is_image_suffixed_with_positive_integer(image, 6);
+            if (suffixValue != 0)
+                return ::kw_bool_least_sized(suffixValue);
+        }
         else
         {
             u16 suffixValue = is_image_suffixed_with_positive_integer(image, 1);
