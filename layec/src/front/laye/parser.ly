@@ -352,6 +352,13 @@ bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool 
         typeNode.sourceSpan = tkCurrent.sourceSpan;
         typeNode.kind = ::type_bool_sized(tkCurrent, sb.size);
     }
+    else if (tkCurrent.kind is ::kw_bool_least_sized lsb)
+    {
+        parser_advance(p); // least sized bool
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_bool_least_sized(tkCurrent, lsb.size);
+    }
     else if (tkCurrent.kind is ::kw_int)
     {
         parser_advance(p); // `int`
@@ -366,6 +373,13 @@ bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool 
         typeNode.sourceSpan = tkCurrent.sourceSpan;
         typeNode.kind = ::type_int_sized(tkCurrent, si.size);
     }
+    else if (tkCurrent.kind is ::kw_int_least_sized lsi)
+    {
+        parser_advance(p); // least sized int
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_int_least_sized(tkCurrent, lsi.size);
+    }
     else if (tkCurrent.kind is ::kw_uint)
     {
         parser_advance(p); // `uint`
@@ -379,6 +393,13 @@ bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool 
 
         typeNode.sourceSpan = tkCurrent.sourceSpan;
         typeNode.kind = ::type_uint_sized(tkCurrent, su.size);
+    }
+    else if (tkCurrent.kind is ::kw_uint_least_sized lsu)
+    {
+        parser_advance(p); // least sized uint
+
+        typeNode.sourceSpan = tkCurrent.sourceSpan;
+        typeNode.kind = ::type_uint_least_sized(tkCurrent, lsu.size);
     }
     else if (tkCurrent.kind is ::kw_float)
     {
