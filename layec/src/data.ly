@@ -258,6 +258,17 @@ enum syntax_token_kind
     kw_unreachable,
 }
 
+syntax_token syntax_token_create_empty(syntax_token nextToken, syntax_token_kind kind)
+{
+    syntax_token result;
+
+    source_location location = nextToken.sourceSpan.startLocation;
+    result.sourceSpan = source_span_create(location, location);
+    result.kind = kind;
+
+    return result;
+}
+
 /* ===== Syntax Tree =====
  *
  *
@@ -396,46 +407,14 @@ enum syntax_node_kind
                          , syntax_token identifier
                          , syntax_token tkClose),
 
-    /* #[ */
-    annotation_only_open(syntax_token tkOpen),
-    /* #[] */
-    annotation_empty( syntax_token tkOpen
-                    , syntax_token tkClose),
-    /* #[namespace laye; */
-    annotation_invalid_unclosed( syntax_token tkOpen
-                               , syntax_token[] unparsedTokens),
-    /* #[1 + 2] */
-    annotation_invalid_closed( syntax_token tkOpen
-                             , syntax_token[] unparsedTokens
-                             , syntax_token tkClose),
-
-    annotation_identifier_unclosed( syntax_token tkOpen
-                                  , syntax_token identifier),
+    annotation_invalid( syntax_token tkOpen
+                      , syntax_token[] unparsedTokens
+                      , syntax_token tkClose),
 
     /* using laye::io; */
-    using_namespace( syntax_token tkUsing
-                   , syntax_node *path
-                   , syntax_token tkSemiColon),
-
-    /* using laye::io */
-    using_namespace_unfinished( syntax_token tkUsing
-                              , syntax_node *path),
-    /* using; */
-    using_namespace_empty( syntax_token tkUsing
-                         , syntax_token tkSemiColon),
-
+    using_namespace(syntax_token tkUsing, syntax_node *path, syntax_token tkSemiColon),
     /* namespace laye::io; */
-    namespace_unscoped( syntax_token tkNamespace
-                      , syntax_node *path
-                      , syntax_token tkSemiColon),
-
-    /* namespace; */
-    namespace_unscoped_empty( syntax_token tkNamespace
-                            , syntax_token tkSemiColon),
-    /* namespace laye::io */
-    namespace_unscoped_unfinished( syntax_token tkNamespace
-                                 , syntax_node *path),
-
+    namespace_unscoped(syntax_token tkNamespace, syntax_node *path, syntax_token tkSemiColon),
     /* namespace laye::io { ... } */
     namespace_scoped( syntax_token tkNamespace
                     , syntax_node *path
@@ -443,11 +422,13 @@ enum syntax_node_kind
                     , syntax_node *[] nodes
                     , syntax_token tkCloseScope),
 
-    /* namespace laye::io { ... */
-    namespace_scoped_unfinished( syntax_token tkNamespace
-                               , syntax_node *path
-                               , syntax_token tkOpenScope
-                               , syntax_node *[] nodes),
+    struct_declaration_opaque(syntax_token tkStruct, syntax_token name, syntax_token tkSemiColon),
+    struct_declaration( syntax_token tkStruct
+                      , syntax_token name
+                      , syntax_token tkOpen
+                      , binding_data *[] fields
+                      , syntax_token[] fieldDelimiters
+                      , syntax_token tkClose),
 
     binding_declaration( binding_data *data
                        , syntax_token tkSemiColon),
@@ -457,12 +438,6 @@ enum syntax_node_kind
                                       , syntax_node *value
                                       , syntax_token tkSemiColon),
 
-    binding_declaration_and_assignment_unfinished( binding_data *data
-                                                 , syntax_token tkAssign
-                                                 , syntax_node *value),
-
-    binding_declaration_unfinished(binding_data *data),
-
     function_declaration( syntax_node *type
                         , syntax_token name
                         , syntax_token tkOpenParams
@@ -470,10 +445,6 @@ enum syntax_node_kind
                         , syntax_token[] tkParameterDelims
                         , syntax_token tkCloseParams
                         , syntax_node *body),
-
-    function_declaration_unfinished( syntax_node *type
-                                   , syntax_token name
-                                   , syntax_token tkOpenParams),
 
     // ===== Modifiers
 
@@ -486,50 +457,17 @@ enum syntax_node_kind
     modifier_foreign(syntax_token tkForeign),
     modifier_foreign_named(syntax_token tkForeign, syntax_token name),
 
-    /* callconv(cdecl) */
-    modifier_callconv_identifier( syntax_token tkCallConv
-                                , syntax_token tkOpenCallConv
-                                , syntax_token identifier
-                                , syntax_token tkCloseCallConv),
+    // TODO(local): convert this to an expression? that'd be v easy
+    // TODO(local): convert this to an expression? that'd be v easy
+    // TODO(local): convert this to an expression? that'd be v easy
+    // TODO(local): convert this to an expression? that'd be v easy
+    // TODO(local): convert this to an expression? that'd be v easy
 
-    /* callconv(::cdecl) */
-    modifier_callconv_infer_variant( syntax_token tkCallConv
-                                   , syntax_token tkOpenCallConv
-                                   , syntax_token tkDelimiter
-                                   , syntax_token identifier
-                                   , syntax_token tkCloseCallConv),
-
-    /* callconv(calling_convention::cdecl) */
-    modifier_callconv_variant( syntax_token tkCallConv
-                             , syntax_token tkOpenCallConv
-                             , syntax_token variantName
-                             , syntax_token tkDelimiter
-                             , syntax_token identifier
-                             , syntax_token tkCloseCallConv),
-
-    /* callconv */
-    modifier_callconv_keyword_only(syntax_token tkCallConv),
-
-    /* callconv() */
-    modifier_callconv_empty( syntax_token tkCallConv
-                           , syntax_token tkOpenCallConv
-                           , syntax_token tkCloseCallConv),
-
-    /* callconv(cdecl */
-    modifier_callconv_unfinished( syntax_token tkCallConv
-                                , syntax_token tkOpenCallConv
-                                , syntax_token identifier),
-
-    /* callconv( */
-    modifier_callconv_unfinished_noname( syntax_token tkCallConv
-                                       , syntax_token tkOpenCallConv),
-
-    /* callconv(expression) */
-    /* If any of the correct constructions of calling convention fail, it rewinds and parses any expression for the sake of having a node */
-    modifier_callconv_expression( syntax_token tkCallConv
-                                , syntax_token tkOpenCallConv
-                                , syntax_node *expression
-                                , syntax_token tkCloseCallConv),
+    /* callconv(cdecl) OR callconv(::cdecl) OR callconv(calling_convention::cdecl) OR any other expression ig tho they'll throw errors almost certainly */
+    modifier_callconv( syntax_token tkCallConv
+                     , syntax_token tkOpenCallConv
+                     , syntax_node *expression
+                     , syntax_token tkCloseCallConv),
 
     /* If the name of a calling convention variant is encountered in a modifier position and it can be guaranteed that it's intended to be
      *   used as a modifier, then this node stores that error case. */
@@ -540,14 +478,9 @@ enum syntax_node_kind
     statement_expression(syntax_node *expression, syntax_token tkSemiColon),
     statement_arrow_expression(syntax_token tkArrow, syntax_node *expression, syntax_token tkSemiColon),
 
-    statement_expression_unfinished(syntax_node *expression),
-    statement_arrow_expression_unfinished(syntax_token tkArrow, syntax_node *expression),
-
     statement_empty(syntax_token tkSemiColon),
-    statement_empty_unfinished,
 
     statement_block(syntax_token tkOpenBlock, syntax_node *[] nodes, syntax_token tkCloseBlock),
-    statement_block_unfinished(syntax_token tkOpenBlock, syntax_node *[] nodes),
 
     statement_if( syntax_token tkIf
                 , syntax_token tkOpenCondition
@@ -555,7 +488,8 @@ enum syntax_node_kind
                 , syntax_token tkCloseCondition
                 , syntax_node *passBody),
 
-    statement_return(syntax_token tkReturn, syntax_token tkSemiColon),
+    statement_return_void(syntax_token tkReturn, syntax_token tkSemiColon),
+    statement_return(syntax_token tkReturn, syntax_node *value, syntax_token tkSemiColon),
 
     // ===== Primary Expressions
 
@@ -581,21 +515,13 @@ enum syntax_node_kind
                                  , syntax_token tkDot
                                  , syntax_token fieldName),
 
-    expression_static_named_index_unfinished( syntax_node *target , syntax_token tkDot),
-
     expression_invoke( syntax_node *target
                      , syntax_token tkOpenParen
                      , syntax_node *[] arguments
                      , syntax_token[] tkDelimiters
                      , syntax_token tkCloseParen),
 
-    expression_invoke_unfinished( syntax_node *target
-                                , syntax_token tkOpenParen
-                                , syntax_node *[] arguments
-                                , syntax_token[] tkDelimiters),
-
     expression_grouped(syntax_token tkOpen, syntax_node *expression, syntax_token tkClose),
-    expression_grouped_unfinished(syntax_token tkOpen, syntax_node *expression),
 
     expression_logical_not(syntax_token tkNot, syntax_node *target),
     expression_negate(syntax_token tkMinus, syntax_node *target),
@@ -608,11 +534,6 @@ enum syntax_node_kind
                             , syntax_node *typeNode
                             , syntax_token tkCloseType
                             , syntax_node *expression),
-
-    expression_explicit_cast_unfinished( syntax_token tkCast
-                                       , syntax_token tkOpen
-                                       , syntax_node *typeNode
-                                       , syntax_node *expression),
 
     expression_explicit_cast_missing_type( syntax_token tkCast
                                          , syntax_node *expression),
@@ -695,6 +616,12 @@ enum syntax_node_kind
               , binding_data *[] fields
               , syntax_token[] delimiters
               , syntax_token tkClose),
+
+    type_function( syntax_node *returnTypeNode
+                 , syntax_token tkOpen
+                 , syntax_node *[] paramTypeNodes
+                 , syntax_token[] delimiters
+                 , syntax_token tkClose),
 
     type_empty,
     type_dangling_modifiers(syntax_node *elementTypeNode, syntax_node *[] modifiers),

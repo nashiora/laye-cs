@@ -304,6 +304,11 @@ syntax_token lexer_read_laye_token(lexer_data *l)
             lexer_advance(l);
             token.kind = ::equal_equal;
         }
+        else if (lexer_current_rune(*l) == 62 /* > */)
+        {
+            lexer_advance(l);
+            token.kind = ::equal_greater;
+        }
         else token.kind = ::equal;
     }
     else if (c == 62 /* > */)

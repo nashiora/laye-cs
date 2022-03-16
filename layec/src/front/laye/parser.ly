@@ -21,6 +21,8 @@ bool parser_read_all_laye_nodes(parser_data *p, syntax_node *[dynamic] *nodes)
 
     while (not parser_is_eof(p))
     {
+        uint sourceIndex = p.lexer.currentIndex;
+
         syntax_token tkCurrent = parser_current_token(p);
 
         syntax_node *topLevelNode = parser_read_laye_top_level_declaration(p);
@@ -36,13 +38,19 @@ bool parser_read_all_laye_nodes(parser_data *p, syntax_node *[dynamic] *nodes)
             return false;
         }
 
-        if (topLevelNode.kind is ::statement_expression_unfinished expressionStatement)
+        if (topLevelNode.kind is ::statement_expression expressionStatement)
         {
             if (expressionStatement.expression.kind is ::expression_unknown_token)
             {
                 diagnostics_add_error(p.diagnostics, ::syntax(topLevelNode), "internal compiler error: stopping the compiler when an expression fails on an invalid token");
                 return false;   
             }
+        }
+
+        if (sourceIndex == p.lexer.currentIndex)
+        {
+            diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "internal compiler error: stopping the compiler when no token is consumed");
+            return false;
         }
 
         string topLevelNodeKindString = nameof_variant(topLevelNode.kind);
@@ -59,9 +67,12 @@ bool parser_expect_laye_identifier(parser_data *p, syntax_token *result)
     *result = parser_current_token(p);
     if (result.kind is ::laye_identifier)
     {
-        parser_advance(p);
+        parser_advance(p); // laye identifier
         return true;
     }
+
+    *result = syntax_token_create_empty(parser_current_token(p), ::laye_identifier(""));
+    diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "identifier expected");
 
     return false;
 }
@@ -85,30 +96,8 @@ syntax_node *parser_read_laye_annotation(parser_data *p)
 
     parser_advance(p); // `#[`
 
-    if (parser_is_eof(p))
-    {
-        result.sourceSpan = tkOpenAnnotation.sourceSpan;
-        result.kind = ::annotation_only_open(tkOpenAnnotation);
-
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "unexpected end of file in annotation");
-
-        return result;
-    }
-
     syntax_token tkCurrent = parser_current_token(p);
-    if (tkCurrent.kind is ::close_bracket)
-    {
-        syntax_token tkCloseEmpty = parser_current_token(p);
-        parser_advance(p); // `]`
-
-        result.sourceSpan = source_span_combine(tkOpenAnnotation.sourceSpan, tkCloseEmpty.sourceSpan);
-        result.kind = ::annotation_empty(tkOpenAnnotation, tkCloseEmpty);
-
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "annotations must not be empty");
-
-        return result;
-    }
-    else if (tkCurrent.kind is ::kw_if)
+    if (tkCurrent.kind is ::kw_if)
     {
         syntax_token tkIf = tkCurrent;
         parser_advance(p); // `if`
@@ -132,50 +121,74 @@ syntax_node *parser_read_laye_annotation(parser_data *p)
         {
             source_location location = tkCurrent.sourceSpan.startLocation;
             tkCloseAnnotation.sourceSpan = source_span_create(location, location);
-            tkCloseAnnotation.kind = ::poison_token;
+            tkCloseAnnotation.kind = ::close_bracket;
 
             diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "']' expected");
         }
 
         result.sourceSpan = source_span_combine(tkOpenAnnotation.sourceSpan, tkCloseAnnotation.sourceSpan);
         result.kind = ::annotation_conditional(tkOpenAnnotation, tkIf, condition, tkCloseAnnotation);
-
-        return result;
     }
     else if (tkCurrent.kind is ::laye_identifier)
     {
         syntax_token identifier = tkCurrent;
         parser_advance(p); // laye_identifier
 
-        tkCurrent = parser_current_token(p);
         // TODO(local): parse annotation identifier invocation
 
-        if (tkCurrent.kind is not ::close_bracket)
+        syntax_token tkCloseAnnotation;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_bracket)
         {
-            result.sourceSpan = source_span_combine(tkOpenAnnotation.sourceSpan, identifier.sourceSpan);
-            result.kind = ::annotation_identifier_unclosed(tkOpenAnnotation, identifier);
+            tkCloseAnnotation = tkCurrent;
+            parser_advance(p); // `]`
+        }
+        else
+        {
+            source_location location = tkCurrent.sourceSpan.startLocation;
+            tkCloseAnnotation.sourceSpan = source_span_create(location, location);
+            tkCloseAnnotation.kind = ::close_bracket;
 
-            diagnostics_add_error(p.diagnostics, ::syntax(result), "']' expected to close annotation");
-
-            return result;
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "']' expected");
         }
 
-        syntax_token tkCloseEmpty = parser_current_token(p);
-        parser_advance(p); // `]`
-
-        result.sourceSpan = source_span_combine(tkOpenAnnotation.sourceSpan, tkCloseEmpty.sourceSpan);
-        result.kind = ::annotation_identifier(tkOpenAnnotation, identifier, tkCloseEmpty);
-
-        return result;
+        result.sourceSpan = source_span_combine(tkOpenAnnotation.sourceSpan, tkCloseAnnotation.sourceSpan);
+        result.kind = ::annotation_identifier(tkOpenAnnotation, identifier, tkCloseAnnotation);
     }
     else
     {
-        result.sourceSpan = tkOpenAnnotation.sourceSpan;
-        result.kind = ::annotation_only_open(tkOpenAnnotation);
+        syntax_token[dynamic] unparsedStorage;
+        while (parser_current_token(p).sourceSpan.startLocation.lineNumber == tkOpenAnnotation.sourceSpan.startLocation.lineNumber)
+        {
+            if (parser_current_token(p).kind is ::close_bracket)
+                break;
 
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "expected 'if' or an identifier to start annotation contents");
+            dynamic_append(unparsedStorage, parser_current_token(p));
+            parser_advance(p); // unparsed token
+        }
 
-        return result;
+        syntax_token[] unparsed = unparsedStorage[:];
+
+        syntax_token tkCloseAnnotation;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_bracket)
+        {
+            tkCloseAnnotation = tkCurrent;
+            parser_advance(p); // `]`
+        }
+        else
+        {
+            source_location location = tkCurrent.sourceSpan.startLocation;
+            tkCloseAnnotation.sourceSpan = source_span_create(location, location);
+            tkCloseAnnotation.kind = ::close_bracket;
+
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "']' expected");
+        }
+
+        result.sourceSpan = source_span_combine(tkOpenAnnotation.sourceSpan, tkCloseAnnotation.sourceSpan);
+        result.kind = ::annotation_invalid(tkOpenAnnotation, unparsed, tkCloseAnnotation);
     }
 
     return result;
@@ -423,6 +436,9 @@ bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool 
         typeNode.sourceSpan = path.sourceSpan;
         typeNode.kind = ::type_named(path);
     }
+    else if (tkCurrent.kind is ::open_paren)
+    {
+    }
 
     if (typeNode.kind is not nil)
     {
@@ -457,8 +473,11 @@ bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool 
     {
         if (isRequired)
         {
-            typeNode.sourceSpan = tkCurrent.sourceSpan;
+            source_location location = tkCurrent.sourceSpan.startLocation;
+            typeNode.sourceSpan = source_span_create(location, location);
             typeNode.kind = ::type_empty;
+
+            diagnostics_add_error(p.diagnostics, ::syntax(typeNode), "type expected");
         }
         else
         {
@@ -518,10 +537,86 @@ bool parser_read_laye_type_node_suffix_impl(parser_data *p, syntax_node **result
 
         return parser_read_laye_type_node_suffix_impl(p, result, isRequired);
     }
+    else if (parser_current_token(p).kind is ::open_paren)
+    {
+        syntax_token tkOpenParen = parser_current_token(p);
+        parser_advance(p); // `(`
+
+        syntax_node *returnTypeNode = *result;
+
+        syntax_node *functionTypeNode = syntax_node_alloc();
+        *result = functionTypeNode;
+
+        syntax_node *[dynamic] paramTypeNodeStorage;
+        syntax_token[dynamic] delimiterStorage;
+
+        if (parser_current_token(p).kind is not ::close_paren)
+        {
+            while (not parser_is_eof(p))
+            {
+                syntax_node *paramTypeNode;
+                if (isRequired)
+                    paramTypeNode = parser_read_laye_type_node(p);
+                else
+                {
+                    bool paramTypeNodeParsed = parser_maybe_read_laye_type_node(p, &paramTypeNode);
+                    if (not paramTypeNodeParsed)
+                    {
+                        syntax_node_free(functionTypeNode);
+                        return false;
+                    }
+                }
+
+                dynamic_append(paramTypeNodeStorage, paramTypeNode);
+
+                if (parser_current_token(p).kind is ::comma)
+                {
+                    dynamic_append(delimiterStorage, parser_current_token(p));
+                    parser_advance(p); // `,`
+
+                    continue;
+                }
+                else break;
+            }
+        }
+
+        syntax_node *[] paramTypeNodes = paramTypeNodeStorage[:];
+        if (paramTypeNodeStorage.length > 0) dynamic_free(paramTypeNodeStorage);
+
+        syntax_token[] delimiters = delimiterStorage[:];
+        if (delimiterStorage.length > 0) dynamic_free(delimiterStorage);
+
+        syntax_token tkCloseParen;
+
+        syntax_token tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_paren)
+        {
+            tkCloseParen = tkCurrent;
+            parser_advance(p); // `(`
+        }
+        else
+        {
+            if (isRequired)
+            {
+                tkCloseParen = syntax_token_create_empty(tkCurrent, ::close_paren);
+                diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "')' expected");   
+            }
+            else
+            {
+                syntax_node_free(functionTypeNode);
+                return false;
+            }
+        }
+
+        functionTypeNode.sourceSpan = source_span_combine(returnTypeNode.sourceSpan, tkCloseParen.sourceSpan);
+        functionTypeNode.kind = ::type_function(returnTypeNode, tkOpenParen, paramTypeNodes, delimiters, tkCloseParen);
+    }
     else if (parser_current_token(p).kind is ::open_bracket)
     {
         syntax_token tkOpenContainer = parser_current_token(p);
         parser_advance(p); // `[`
+
+        syntax_token tkCloseContainer;
 
         syntax_node *elementTypeNode = *result;
 
@@ -533,65 +628,85 @@ bool parser_read_laye_type_node_suffix_impl(parser_data *p, syntax_node **result
             syntax_token tkBuffer = parser_current_token(p);
             parser_advance(p); // `*`
 
-            if (parser_current_token(p).kind is not ::close_bracket)
+            if (parser_current_token(p).kind is ::close_bracket)
             {
-                containerTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkBuffer.sourceSpan);
-                containerTypeNode.kind = ::type_buffer_unfinished(elementTypeNode, modifiers, tkOpenContainer, tkBuffer);
-
-                diagnostics_add_error(p.diagnostics, ::syntax(containerTypeNode), "']' expected to close buffer type");
+                tkCloseContainer = parser_current_token(p);
+                parser_advance(p); // `]`
             }
             else
             {
-                syntax_token tkCloseBuffer = parser_current_token(p);
-                parser_advance(p); // `]`
-
-                containerTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkCloseBuffer.sourceSpan);
-                containerTypeNode.kind = ::type_buffer(elementTypeNode, modifiers, tkOpenContainer, tkBuffer, tkCloseBuffer);
-
-                if (parser_current_token(p).kind is ::question)
+                if (isRequired)
                 {
-                    syntax_token tkQuestion = parser_current_token(p);
-                    parser_advance(p); // `?`
-
-                    syntax_node *elementTypeNode = containerTypeNode;
-                
-                    syntax_node *nullableTypeNode = syntax_node_alloc();
-                    *result = nullableTypeNode;
-
-                    nullableTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkQuestion.sourceSpan);
-                    nullableTypeNode.kind = ::type_nullable(elementTypeNode, tkQuestion);
+                    tkCloseContainer = syntax_token_create_empty(parser_current_token(p), ::close_bracket);
+                    diagnostics_add_error(p.diagnostics, ::syntax(containerTypeNode), "']' expected");
                 }
+                else
+                {
+                    syntax_node_free(containerTypeNode);
+                    return false;
+                }
+            }
+
+            containerTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkCloseContainer.sourceSpan);
+            containerTypeNode.kind = ::type_buffer(elementTypeNode, modifiers, tkOpenContainer, tkBuffer, tkCloseContainer);
+
+            if (parser_current_token(p).kind is ::question)
+            {
+                syntax_token tkQuestion = parser_current_token(p);
+                parser_advance(p); // `?`
+
+                syntax_node *elementTypeNode = containerTypeNode;
+            
+                syntax_node *nullableTypeNode = syntax_node_alloc();
+                *result = nullableTypeNode;
+
+                nullableTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkQuestion.sourceSpan);
+                nullableTypeNode.kind = ::type_nullable(elementTypeNode, tkQuestion);
             }
 
             return parser_read_laye_type_node_suffix_impl(p, result, isRequired);
         }
-        else if (parser_current_token(p).kind is ::close_bracket)
+        
+        if (parser_current_token(p).kind is ::close_bracket)
         {
-            syntax_token tkCloseSlice = parser_current_token(p);
+            syntax_token tkCloseContainer = parser_current_token(p);
             parser_advance(p); // `]`
-
-            containerTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkCloseSlice.sourceSpan);
-            containerTypeNode.kind = ::type_slice(elementTypeNode, modifiers, tkOpenContainer, tkCloseSlice);
         }
         else
         {
-            diagnostics_add_error(p.diagnostics, ::syntax(containerTypeNode), "'*', ']', 'dynamic', a type or an expression expected to continue container type");
+            if (isRequired)
+            {
+                tkCloseContainer = syntax_token_create_empty(parser_current_token(p), ::close_bracket);
+                diagnostics_add_error(p.diagnostics, ::syntax(containerTypeNode), "'*', ']', 'dynamic', a type or an expression expected");
+            }
+            else
+            {
+                syntax_node_free(containerTypeNode);
+                return false;
+            }
         }
+
+        containerTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, tkCloseContainer.sourceSpan);
+        containerTypeNode.kind = ::type_slice(elementTypeNode, modifiers, tkOpenContainer, tkCloseContainer);
 
         return parser_read_laye_type_node_suffix_impl(p, result, isRequired);
     }
 
     if (modifiers.length > 0)
     {
-        syntax_node *elementTypeNode = *result;
+        if (isRequired)
+        {
+            syntax_node *elementTypeNode = *result;
 
-        syntax_node *danglingTypeNode = syntax_node_alloc();
-        danglingTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, modifiers[modifiers.length - 1].sourceSpan);
-        danglingTypeNode.kind = ::type_dangling_modifiers(elementTypeNode, modifiers);
+            syntax_node *danglingTypeNode = syntax_node_alloc();
+            danglingTypeNode.sourceSpan = source_span_combine(elementTypeNode.sourceSpan, modifiers[modifiers.length - 1].sourceSpan);
+            danglingTypeNode.kind = ::type_dangling_modifiers(elementTypeNode, modifiers);
 
-        *result = danglingTypeNode;
+            *result = danglingTypeNode;
 
-        diagnostics_add_error(p.diagnostics, ::syntax(danglingTypeNode), "expected container type syntax following type modifiers");
+            diagnostics_add_error(p.diagnostics, ::syntax(danglingTypeNode), "expected container type syntax following type modifiers");   
+        }
+        else return false;
     }
 
     return true;
@@ -736,67 +851,44 @@ syntax_node *[] parser_read_laye_modifiers(parser_data *p)
             syntax_token tkCallConv = tkCurrent;
             parser_advance(p); // `callconv`
 
-            tkCurrent = parser_current_token(p);
-            if (tkCurrent.kind is not ::open_paren)
-            {
-                callconvModifier = syntax_node_alloc();
-                callconvModifier.kind = ::modifier_callconv_keyword_only(tkCallConv);
-                callconvModifier.sourceSpan = tkCurrent.sourceSpan;
+            syntax_token tkOpenParen;
 
-                dynamic_append(modifierStorage, callconvModifier);
-                continue;
+            tkCurrent = parser_current_token(p);
+            if (tkCurrent.kind is ::open_paren)
+            {
+                tkOpenParen = tkCurrent;
+                parser_advance(p); // `(`
+            }
+            else
+            {
+                source_location location = tkCurrent.sourceSpan.startLocation;
+                tkOpenParen.sourceSpan = source_span_create(location, location);
+                tkOpenParen.kind = ::open_paren;
+
+                diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "'(' expected");
             }
 
-            syntax_token tkOpenParen = tkCurrent;
-            parser_advance(p); // `(`
+            syntax_node *expression = parser_read_laye_expression(p);
+
+            syntax_token tkCloseParen;
 
             tkCurrent = parser_current_token(p);
             if (tkCurrent.kind is ::close_paren)
             {
+                tkOpenParen = tkCurrent;
                 parser_advance(p); // `)`
-
-                callconvModifier.kind = ::modifier_callconv_empty(tkCallConv, tkOpenParen, tkCurrent);
-                callconvModifier.sourceSpan = source_span_combine(tkCallConv.sourceSpan, tkCurrent.sourceSpan);
-
-                diagnostics_add_error(p.diagnostics, ::syntax(callconvModifier), "expected calling convention kind in callconv modifier");
-
-                dynamic_append(modifierStorage, callconvModifier);
-                continue;
             }
-
-            tkCurrent = parser_current_token(p);
-            if (tkCurrent.kind is not ::laye_identifier)
+            else
             {
-                callconvModifier.kind = ::modifier_callconv_unfinished_noname(tkCallConv, tkOpenParen);
-                callconvModifier.sourceSpan = source_span_combine(tkCallConv.sourceSpan, tkOpenParen.sourceSpan);
+                source_location location = tkCurrent.sourceSpan.startLocation;
+                tkOpenParen.sourceSpan = source_span_create(location, location);
+                tkOpenParen.kind = ::close_paren;
 
-                diagnostics_add_error(p.diagnostics, ::syntax(callconvModifier), "expected calling convention kind in callconv modifier");
-
-                dynamic_append(modifierStorage, callconvModifier);
-                continue;
+                diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "')' expected");
             }
 
-            syntax_token identifier = tkCurrent;
-            parser_advance(p); // identifier
-
-            tkCurrent = parser_current_token(p);
-            if (tkCurrent.kind is not ::close_paren)
-            {
-                parser_advance(p); // `)`
-
-                callconvModifier.kind = ::modifier_callconv_unfinished(tkCallConv, tkOpenParen, identifier);
-                callconvModifier.sourceSpan = source_span_combine(tkCallConv.sourceSpan, identifier.sourceSpan);
-
-                diagnostics_add_error(p.diagnostics, ::syntax(callconvModifier), "expected calling convention kind in callconv modifier");
-
-                dynamic_append(modifierStorage, callconvModifier);
-                continue;
-            }
-
-            parser_advance(p); // `)`
-
-            callconvModifier.kind = ::modifier_callconv_identifier(tkCallConv, tkOpenParen, identifier, tkCurrent);
-            callconvModifier.sourceSpan = source_span_combine(tkCallConv.sourceSpan, tkCurrent.sourceSpan);
+            callconvModifier.sourceSpan = source_span_combine(tkCallConv.sourceSpan, tkCloseParen.sourceSpan);
+            callconvModifier.kind = ::modifier_callconv(tkCallConv, tkOpenParen, expression, tkCloseParen);
 
             dynamic_append(modifierStorage, callconvModifier);
         }
@@ -810,19 +902,19 @@ syntax_node *[] parser_read_laye_modifiers(parser_data *p)
 syntax_node *parser_read_laye_top_level_declaration(parser_data *p)
 {
     syntax_node *[] annotations = parser_read_laye_annotations(p);
-    syntax_node *[] modifiers = parser_read_laye_modifiers(p);
 
     syntax_token tkCurrent = parser_current_token(p);
 
-    // TODO(local): switch
-    // TODO(local): switch
     if (tkCurrent.kind is ::kw_namespace)
         return parser_read_laye_namespace(p, annotations);
     else if (tkCurrent.kind is ::kw_using)
         return parser_read_laye_using(p, annotations);
-    else if (tkCurrent.kind is ::kw_struct)
-    {
-    }
+    
+    syntax_node *[] modifiers = parser_read_laye_modifiers(p);
+    tkCurrent = parser_current_token(p);
+
+    if (tkCurrent.kind is ::kw_struct)
+        return parser_read_laye_struct(p, annotations, modifiers);
     else if (tkCurrent.kind is ::kw_enum)
     {
     }
@@ -894,24 +986,22 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
         resultBlock.annotations = annotations;
         resultBlock.modifiers = modifiers;
 
-        if (not parser_check_laye_delimiter(p, ::close_brace))
+        syntax_token tkCloseBlock;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_brace)
         {
-            if (blockNodes.length > 0)
-                resultBlock.sourceSpan = source_span_combine(tkOpenBlock.sourceSpan, blockNodes[blockNodes.length - 1].sourceSpan);
-            else resultBlock.sourceSpan = tkOpenBlock.sourceSpan;
-
-            resultBlock.kind = ::statement_block_unfinished(tkOpenBlock, blockNodes);
-
-            diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "'}' expected to end block statement");
+            syntax_token tkCloseBlock = tkCurrent;
+            parser_advance(p); // `}`
         }
         else
         {
-            syntax_token tkCloseBlock = parser_current_token(p);
-            parser_advance(p); // `}`
-
-            resultBlock.sourceSpan = source_span_combine(tkOpenBlock.sourceSpan, tkCloseBlock.sourceSpan);
-            resultBlock.kind = ::statement_block(tkOpenBlock, blockNodes, tkCloseBlock);
+            tkCloseBlock = syntax_token_create_empty(tkCurrent, ::close_brace);
+            diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "'}' expected");
         }
+
+        resultBlock.sourceSpan = source_span_combine(tkOpenBlock.sourceSpan, tkCloseBlock.sourceSpan);
+        resultBlock.kind = ::statement_block(tkOpenBlock, blockNodes, tkCloseBlock);
 
         return resultBlock;
     }
@@ -936,10 +1026,7 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
         }
         else
         {
-            source_location location = tkCurrent.sourceSpan.startLocation;
-            tkOpenParen.sourceSpan = source_span_create(location, location);
-            tkOpenParen.kind = ::poison_token;
-
+            tkOpenParen = syntax_token_create_empty(tkCurrent, ::open_paren);
             diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "'(' expected");
         }
 
@@ -953,10 +1040,7 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
         }
         else
         {
-            source_location location = tkCurrent.sourceSpan.startLocation;
-            tkCloseParen.sourceSpan = source_span_create(location, location);
-            tkCloseParen.kind = ::poison_token;
-
+            tkCloseParen = syntax_token_create_empty(tkCurrent, ::close_paren);
             diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "')' expected");
         }
         
@@ -988,6 +1072,22 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
         {
             tkSemiColon = tkCurrent;
             parser_advance(p); // `;`
+
+            syntax_node *resultReturnVoid = syntax_node_alloc();
+
+            resultReturnVoid.sourceSpan = source_span_combine(tkReturn.sourceSpan, tkSemiColon.sourceSpan);
+            resultReturnVoid.kind = ::statement_return_void(tkReturn, tkSemiColon);
+
+            return resultReturnVoid;
+        }
+
+        syntax_node *expression = parser_read_laye_expression(p);
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::semi_colon)
+        {
+            tkSemiColon = tkCurrent;
+            parser_advance(p); // `;`
         }
         else
         {
@@ -1001,7 +1101,7 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
         syntax_node *resultReturn = syntax_node_alloc();
 
         resultReturn.sourceSpan = source_span_combine(tkReturn.sourceSpan, tkSemiColon.sourceSpan);
-        resultReturn.kind = ::statement_return(tkReturn, tkSemiColon);
+        resultReturn.kind = ::statement_return(tkReturn, expression, tkSemiColon);
 
         return resultReturn;
     }
@@ -1064,8 +1164,10 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
             endSpan = modifiers[modifiers.length - 1].sourceSpan;
         }
 
+        syntax_token tkSemiColon = syntax_token_create_empty(parser_current_token(p), ::semi_colon);
+
         result.sourceSpan = source_span_combine(startSpan, endSpan);
-        result.kind = ::statement_empty_unfinished;
+        result.kind = ::statement_empty(tkSemiColon);
         
         if (annotations.length > 0 and modifiers.length > 0)
             diagnostics_add_error(p.diagnostics, ::syntax(result), "annotations and modifiers can only be applied to declarations");
@@ -1080,21 +1182,22 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
 
     // TODO(local): check for things like assignment
 
-    if (parser_current_token(p).kind is ::semi_colon)
+    syntax_token tkSemiColon;
+
+    tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::semi_colon)
     {
         syntax_token tkSemiColon = parser_current_token(p);
         parser_advance(p); // `;`
-
-        result.sourceSpan = source_span_combine(expression.sourceSpan, tkSemiColon.sourceSpan);
-        result.kind = ::statement_expression(expression, tkSemiColon);
     }
     else
     {
-        result.sourceSpan = expression.sourceSpan;
-        result.kind = ::statement_expression_unfinished(expression);
-
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "';' expected to terminate expression statement");
+        tkSemiColon = syntax_token_create_empty(tkCurrent, ::semi_colon);
+        diagnostics_add_error(p.diagnostics, ::syntax(result), "';' expected");
     }
+
+    result.sourceSpan = source_span_combine(expression.sourceSpan, tkSemiColon.sourceSpan);
+    result.kind = ::statement_expression(expression, tkSemiColon);
 
     return result;
 }
@@ -1165,7 +1268,6 @@ syntax_node *parser_read_laye_using(parser_data *p, syntax_node *[] annotations)
         startSpan = annotations[0].sourceSpan;
     else startSpan = parser_current_token(p).sourceSpan;
 
-    syntax_token nextToken;
     syntax_token tkUsing = parser_current_token(p);
 
     // TODO(local): is expression
@@ -1175,42 +1277,29 @@ syntax_node *parser_read_laye_using(parser_data *p, syntax_node *[] annotations)
 
     syntax_node *result = syntax_node_alloc();
     result.annotations = annotations;
-    // TODO(local): defer
-    // defer return result;
 
     parser_advance(p); // `using`
 
-    nextToken = parser_current_token(p);
-    if (nextToken.kind is ::semi_colon)
-    {
-        syntax_token semiColon = nextToken;
-        parser_advance(p); // `;`
-
-        result.kind = ::using_namespace_empty(tkUsing, nextToken);
-        result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
-        
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "using statements must not be empty");
-
-        return result;
-    }
-
     syntax_node *namespacePath = parser_read_laye_namespace_path(p, false);
+    syntax_token tkSemiColon;
 
-    nextToken = parser_current_token(p);
-    if (nextToken.kind is not ::semi_colon)
+    syntax_token tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::semi_colon)
     {
-        result.kind = ::using_namespace_unfinished(tkUsing, namespacePath);
-        result.sourceSpan = source_span_combine(startSpan, namespacePath.sourceSpan);
-
-        diagnostics_add_error(p.diagnostics, ::token(nextToken), "expected ';' to end using statement");
+        tkSemiColon = tkCurrent;
+        parser_advance(p); // `;`
     }
     else
     {
-        parser_advance(p); // `;`
+        source_location location = tkCurrent.sourceSpan.startLocation;
+        tkSemiColon.sourceSpan = source_span_create(location, location);
+        tkSemiColon.kind = ::semi_colon;
 
-        result.kind = ::using_namespace(tkUsing, namespacePath, nextToken);
-        result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
+        diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "';' expected");
     }
+
+    result.kind = ::using_namespace(tkUsing, namespacePath, tkSemiColon);
+    result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
 
     return result;
 }
@@ -1222,7 +1311,6 @@ syntax_node *parser_read_laye_namespace(parser_data *p, syntax_node *[] annotati
         startSpan = annotations[0].sourceSpan;
     else startSpan = parser_current_token(p).sourceSpan;
 
-    syntax_token nextToken;
     syntax_token tkNamespace = parser_current_token(p);
 
     // TODO(local): is expression
@@ -1232,79 +1320,131 @@ syntax_node *parser_read_laye_namespace(parser_data *p, syntax_node *[] annotati
 
     syntax_node *result = syntax_node_alloc();
     result.annotations = annotations;
-    // TODO(local): defer
-    // defer return result;
 
     parser_advance(p); // `namespace`
 
-    nextToken = parser_current_token(p);
-    if (nextToken.kind is ::semi_colon)
-    {
-        syntax_token semiColon = nextToken;
-        parser_advance(p); // `;`
-
-        result.kind = ::using_namespace_empty(tkNamespace, nextToken);
-        result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
-        
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "using statements must not be empty");
-
-        return result;
-    }
-
     syntax_node *namespacePath = parser_read_laye_namespace_path(p, false);
 
-    nextToken = parser_current_token(p);
-    if (nextToken.kind is ::semi_colon)
+    syntax_token tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::semi_colon)
     {
+        syntax_token tkSemiColon = tkCurrent;
         parser_advance(p); // `;`
 
-        result.kind = ::namespace_unscoped(tkNamespace, namespacePath, nextToken);
-        result.sourceSpan = source_span_combine(startSpan, nextToken.sourceSpan);
+        result.kind = ::namespace_unscoped(tkNamespace, namespacePath, tkSemiColon);
+        result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
     }
-    else if (nextToken.kind is ::open_brace)
+    else if (tkCurrent.kind is ::open_brace)
     {
-        syntax_token tkOpenScope = nextToken;
+        syntax_token tkOpenScope = tkCurrent;
         parser_advance(p); // `{`
 
-        // TODO(local): parse top level namespace contents
-        // TODO(local): parse top level namespace contents
         syntax_node *[dynamic] namespaceNodeStorage;
-
         while (not parser_is_eof(p) and not parser_check_laye_delimiter(p, ::close_brace))
         {
-            syntax_node *stmt = parser_read_laye_statement(p);
+            syntax_node *stmt = parser_read_laye_top_level_declaration(p);
             dynamic_append(namespaceNodeStorage, stmt);
         }
 
         syntax_node *[] namespaceNodes = namespaceNodeStorage[:];
         if (namespaceNodeStorage.length > 0) dynamic_free(namespaceNodeStorage);
 
-        if (not parser_check_laye_delimiter(p, ::close_brace))
+        syntax_token tkCloseScope;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_brace)
         {
-            if (namespaceNodes.length > 0)
-                result.sourceSpan = source_span_combine(tkOpenScope.sourceSpan, namespaceNodes[namespaceNodes.length - 1].sourceSpan);
-            else result.sourceSpan = tkOpenScope.sourceSpan;
-
-            result.kind = ::namespace_scoped_unfinished(tkNamespace, namespacePath, tkOpenScope, namespaceNodes);
-
-            diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "'}' expected to end namespace scope");
+            tkCloseScope = tkCurrent;
+            parser_advance(p); // `}`
         }
         else
         {
-            syntax_token tkCloseScope = parser_current_token(p);
-            parser_advance(p); // `}`
-
-            result.sourceSpan = source_span_combine(tkOpenScope.sourceSpan, tkCloseScope.sourceSpan);
-            result.kind = ::namespace_scoped(tkNamespace, namespacePath, tkOpenScope, namespaceNodes, tkCloseScope);
+            tkCloseScope = syntax_token_create_empty(tkCurrent, ::close_brace);
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "'}' expected");
         }
+
+        result.sourceSpan = source_span_combine(tkOpenScope.sourceSpan, tkCloseScope.sourceSpan);
+        result.kind = ::namespace_scoped(tkNamespace, namespacePath, tkOpenScope, namespaceNodes, tkCloseScope);
     }
     else
     {
-        result.kind = ::namespace_unscoped_unfinished(tkNamespace, namespacePath);
-        result.sourceSpan = source_span_combine(startSpan, namespacePath.sourceSpan);
+        syntax_token tkSemiColon = syntax_token_create_empty(tkCurrent, ::semi_colon);
+        diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "';' or '}' expected");
 
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "expected ';' to end namespace statement or '{' to open namespace scope");
+        result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
+        result.kind = ::namespace_unscoped(tkNamespace, namespacePath, tkSemiColon);
     }
+
+    return result;
+}
+
+syntax_node *parser_read_laye_struct(parser_data *p, syntax_node *[] annotations, syntax_node *[] modifiers)
+{
+    source_span startSpan;
+    if (annotations.length > 0 and modifiers.length > 0)
+        startSpan = source_span_combine(annotations[0].sourceSpan, modifiers[0].sourceSpan);
+    else if (annotations.length > 0)
+        startSpan = annotations[0].sourceSpan;
+    else if (modifiers.length > 0)
+        startSpan = modifiers[0].sourceSpan;
+    else startSpan = parser_current_token(p).sourceSpan;
+
+    syntax_token tkStruct = parser_current_token(p);
+
+    // TODO(local): is expression
+    // TODO(local): assert
+    if (tkStruct.kind is not ::kw_struct)
+        panic("parser_read_laye_struct called without `struct` keyword");
+
+    syntax_node *result = syntax_node_alloc();
+    result.annotations = annotations;
+    result.modifiers = modifiers;
+
+    parser_advance(p); // `struct`
+
+    syntax_token structName;
+    parser_expect_laye_identifier(p, &structName);
+
+    syntax_token tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::semi_colon)
+    {
+        parser_advance(p); // `;`
+        result.sourceSpan = source_span_combine(tkStruct.sourceSpan, tkCurrent.sourceSpan);
+        result.kind = ::struct_declaration_opaque(tkStruct, structName, tkCurrent);
+        return result;
+    }
+
+    syntax_token tkOpenBrace;
+    if (tkCurrent.kind is ::open_brace)
+    {
+        tkOpenBrace = tkCurrent;
+        parser_advance(p); // `{`
+    }
+    else
+    {
+        tkOpenBrace = syntax_token_create_empty(tkCurrent, ::open_brace);
+        diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "'{' expected");
+    }
+
+    syntax_token[] fieldDelimiters;
+    binding_data *[] fields = parser_read_laye_bindings_delimited(p, ::semi_colon, &fieldDelimiters, ::require, ::close_brace);
+
+    syntax_token tkCloseBrace;
+
+    tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::close_brace)
+    {
+        tkCloseBrace = tkCurrent;
+        parser_advance(p); // `}`
+    }
+    else
+    {
+        tkCloseBrace = syntax_token_create_empty(tkCurrent, ::close_brace);
+        diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "'}' expected");
+    }
+
+    result.sourceSpan = source_span_combine(tkStruct.sourceSpan, tkCloseBrace.sourceSpan);
+    result.kind = ::struct_declaration(tkStruct, structName, tkOpenBrace, fields, fieldDelimiters, tkCloseBrace);
 
     return result;
 }
@@ -1342,21 +1482,25 @@ syntax_node *parser_read_laye_function_declaration(
     parser_advance(p); // `(`
 
     syntax_token[] paramDelimiters;
-    binding_data *[] parameters = parser_read_laye_bindings_delimited(p, ::comma, &paramDelimiters, false, ::close_paren);
+    binding_data *[] parameters = parser_read_laye_bindings_delimited(p, ::comma, &paramDelimiters, ::disallow, ::close_paren);
 
-    syntax_token tkCloseParams = parser_current_token(p);
+    syntax_token tkCloseParams;
+
+    syntax_token tkCurrent = parser_current_token(p);
     // NOTE(local): parser_read_laye_bindings_delimited does NOT consume the ending delimiter
-    if (tkCloseParams.kind is not ::close_paren)
+    if (tkCurrent.kind is ::close_paren)
     {
-        result.sourceSpan = source_span_combine(startSpan, tkName.sourceSpan);
-        result.kind = ::function_declaration_unfinished(typeNode, tkName, tkOpenParams);
-
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "expected ')' to close function paramter list");
-
-        return result;
+        tkCloseParams = tkCurrent;
+        parser_advance(p); // `)`
     }
+    else
+    {
+        source_location location = tkCurrent.sourceSpan.startLocation;
+        tkCloseParams.sourceSpan = source_span_create(location, location);
+        tkCloseParams.kind = ::close_paren;
 
-    parser_advance(p); // `)`
+        diagnostics_add_error(p.diagnostics, ::syntax(result), "')' expected");
+    }
 
     syntax_node *body;
     if (   parser_check_laye_delimiter(p, ::semi_colon)
@@ -1374,27 +1518,34 @@ syntax_node *parser_read_laye_function_declaration(
 
         // TODO(local): check for things like assignment
 
-        if (parser_current_token(p).kind is ::semi_colon)
+        syntax_token tkSemiColon;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::semi_colon)
         {
             syntax_token tkSemiColon = parser_current_token(p);
             parser_advance(p); // `;`
-
-            body.sourceSpan = source_span_combine(expression.sourceSpan, tkSemiColon.sourceSpan);
-            body.kind = ::statement_arrow_expression(tkArrow, expression, tkSemiColon);
         }
         else
         {
-            body.sourceSpan = expression.sourceSpan;
-            body.kind = ::statement_arrow_expression_unfinished(tkArrow, expression);
-
-            diagnostics_add_error(p.diagnostics, ::syntax(body), "';' expected to terminate expression function body");
+            tkSemiColon = syntax_token_create_empty(tkCurrent, ::semi_colon);
+            diagnostics_add_error(p.diagnostics, ::syntax(result), "';' expected");
         }
+
+        body.sourceSpan = source_span_combine(expression.sourceSpan, tkSemiColon.sourceSpan);
+        body.kind = ::statement_arrow_expression(tkArrow, expression, tkSemiColon);
     }
     else
     {
+        syntax_token tkSemiColon;
+
+        source_location location = tkCurrent.sourceSpan.startLocation;
+        tkSemiColon.sourceSpan = source_span_create(location, location);
+        tkSemiColon.kind = ::close_paren;
+
         body = syntax_node_alloc();
         body.sourceSpan = tkCloseParams.sourceSpan;
-        body.kind = ::statement_empty_unfinished;
+        body.kind = ::statement_empty(tkSemiColon);
 
         diagnostics_add_error(p.diagnostics, ::syntax(body), "function body expected");
     }
@@ -1425,45 +1576,53 @@ syntax_node *parser_read_laye_binding_declaration(
     data.typeNode = typeNode;
     data.name = tkName;
 
-    if (parser_current_token(p).kind is ::semi_colon)
-    {
-        syntax_token tkSemiColon = parser_current_token(p);
-        parser_advance(p); // `;`
+    syntax_token tkSemiColon;
 
-        result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
-        result.kind = ::binding_declaration(data, tkSemiColon);
-
-        return result;
-    }
-
-    if (parser_current_token(p).kind is ::equal)
+    syntax_token tkCurrent = parser_current_token(p);
+    if (tkCurrent.kind is ::equal)
     {
         syntax_token tkAssign = parser_current_token(p);
         parser_advance(p); // `=`
 
         syntax_node *expression = parser_read_laye_expression(p);
 
-        if (parser_current_token(p).kind is ::semi_colon)
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::semi_colon)
         {
-            syntax_token tkSemiColon = parser_current_token(p);
+            syntax_token tkSemiColon = tkCurrent;
             parser_advance(p); // `;`
-
-            result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
-            result.kind = ::binding_declaration_and_assignment(data, tkAssign, expression, tkSemiColon);
-
-            return result;
+        }
+        else
+        {
+            source_location location = tkCurrent.sourceSpan.startLocation;
+            tkSemiColon.sourceSpan = source_span_create(location, location);
+            tkSemiColon.kind = ::semi_colon;
         }
 
-        result.sourceSpan = source_span_combine(startSpan, tkName.sourceSpan);
-        result.kind = ::binding_declaration_and_assignment_unfinished(data, tkAssign, expression);
+        result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
+        result.kind = ::binding_declaration_and_assignment(data, tkAssign, expression, tkSemiColon);
 
         return result;
     }
+    else
+    {
+        if (tkCurrent.kind is ::semi_colon)
+        {
+            syntax_token tkSemiColon = tkCurrent;
+            parser_advance(p); // `;`
+        }
+        else
+        {
+            source_location location = tkCurrent.sourceSpan.startLocation;
+            tkSemiColon.sourceSpan = source_span_create(location, location);
+            tkSemiColon.kind = ::semi_colon;
+        }
 
-    result.sourceSpan = source_span_combine(startSpan, tkName.sourceSpan);
-    result.kind = ::binding_declaration_unfinished(data);
+        result.sourceSpan = source_span_combine(startSpan, tkSemiColon.sourceSpan);
+        result.kind = ::binding_declaration(data, tkSemiColon);
 
-    return result;
+        return result;
+    }
 }
 
 syntax_node *parser_read_laye_primary_expression(parser_data *p)
@@ -1583,23 +1742,22 @@ syntax_node *parser_read_laye_primary_expression(parser_data *p)
 
         syntax_node *expression = parser_read_laye_expression(p);
 
-        if (parser_current_token(p).kind is ::close_paren)
-        {
-            syntax_token tkCloseGrouped = parser_current_token(p);
-            parser_advance(p); // `)`
+        syntax_token tkCloseGrouped;
 
-            result.sourceSpan = source_span_combine(tkOpenGrouped.sourceSpan, tkCloseGrouped.sourceSpan);
-            result.kind = ::expression_grouped(tkOpenGrouped, expression, tkCloseGrouped);
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_paren)
+        {
+            tkCloseGrouped = tkCurrent;
+            parser_advance(p); // `)`
         }
         else
         {
-            result.sourceSpan = source_span_combine(tkOpenGrouped.sourceSpan, expression.sourceSpan);
-            result.kind = ::expression_grouped_unfinished(tkOpenGrouped, expression);
-
-            diagnostics_add_error(p.diagnostics, ::syntax(result), "')' expected to end grouped expression");
-
-            return result;
+            tkCloseGrouped = syntax_token_create_empty(tkCurrent, ::close_paren);
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "')' expected");
         }
+
+        result.sourceSpan = source_span_combine(tkOpenGrouped.sourceSpan, tkCloseGrouped.sourceSpan);
+        result.kind = ::expression_grouped(tkOpenGrouped, expression, tkCloseGrouped);
     }
     else if (tkCurrent.kind is ::kw_not)
     {
@@ -1671,58 +1829,58 @@ syntax_node *parser_read_laye_primary_expression(parser_data *p)
         syntax_token tkCast = tkCurrent;
         parser_advance(p); // `cast`
 
-        if (parser_current_token(p).kind is not ::open_paren)
+        syntax_token tkOpenType;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::open_paren)
         {
-            syntax_node *target = parser_read_laye_primary_expression(p);
-
-            result.sourceSpan = source_span_combine(tkCast.sourceSpan, target.sourceSpan);
-            result.kind = ::expression_explicit_cast_missing_type(tkCast, target);
-
-            diagnostics_add_error(p.diagnostics, ::syntax(result), "cast expression is missing destination type");
-            diagnostics_add_info(p.diagnostics, ::syntax(result), "expected to be in the form of 'cast(type) value'");
+            tkOpenType = tkCurrent;
+            parser_advance(p); // `(`
         }
         else
         {
-            syntax_token tkOpenType = parser_current_token(p);
-            parser_advance(p); // `(`
-
-            syntax_node *typeNode = parser_read_laye_type_node(p);
-
-            syntax_token tkCloseType = parser_current_token(p);
-            if (tkCloseType.kind is not ::close_paren)
-            {
-                syntax_node *target = parser_read_laye_primary_expression(p);
-
-                result.sourceSpan = source_span_combine(tkCast.sourceSpan, target.sourceSpan);
-                result.kind = ::expression_explicit_cast_unfinished(tkCast, tkOpenType, typeNode, target);
-
-                diagnostics_add_error(p.diagnostics, ::token(tkCloseType), "')' expected to close type in cast operator");
-            }
-            else
-            {
-                parser_advance(p); // `)`
-
-                syntax_node *target = parser_read_laye_primary_expression(p);
-
-                result.sourceSpan = source_span_combine(tkCast.sourceSpan, target.sourceSpan);
-                result.kind = ::expression_explicit_cast(tkCast, tkOpenType, typeNode, tkCloseType, target);
-            }
+            tkOpenType = syntax_token_create_empty(tkCurrent, ::open_paren);
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "'(' expected");
         }
+
+        syntax_node *typeNode = parser_read_laye_type_node(p);
+
+        syntax_token tkCloseType;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_paren)
+        {
+            tkCloseType = tkCurrent;
+            parser_advance(p); // `(`
+        }
+        else
+        {
+            tkCloseType = syntax_token_create_empty(tkCurrent, ::close_paren);
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "')' expected");
+        }
+
+        syntax_node *target = parser_read_laye_primary_expression(p);
+
+        result.sourceSpan = source_span_combine(tkCast.sourceSpan, target.sourceSpan);
+        result.kind = ::expression_explicit_cast(tkCast, tkOpenType, typeNode, tkCloseType, target);
 
         // we can early return from here since the recursive nature already catches all possible suffixes
         return result;
     }
     else
     {
-        syntax_token tkUnknown = parser_current_token(p);
-        parser_advance(p);
+        //syntax_token tkUnknown = parser_current_token(p);
+        //parser_advance(p);
 
-        result.sourceSpan = tkUnknown.sourceSpan;
-        result.kind = ::expression_unknown_token(tkUnknown);
+        source_location location = parser_current_token(p).sourceSpan.startLocation;
+        result.sourceSpan = source_span_create(location, location);
+        result.kind = ::expression_missing;
 
-        diagnostics_add_error(p.diagnostics, ::syntax(result), "unknown token in expression context");
+        diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "unknown token in expression context");
 
         // TODO(local): return here? instead of parsing suffix of invalid expression? unsure
+
+        return result;
     }
 
     return parser_read_laye_primary_expression_suffix(p, result);
@@ -1739,21 +1897,22 @@ syntax_node *parser_read_laye_primary_expression_suffix(parser_data *p, syntax_n
         syntax_token tkDot = tkCurrent;
         parser_advance(p); // `.`
 
+        syntax_token fieldName;
+
         tkCurrent = parser_current_token(p);
         if (tkCurrent.kind is ::laye_identifier)
         {
-            result.sourceSpan = source_span_combine(primaryExpression.sourceSpan, tkCurrent.sourceSpan);
-            result.kind = ::expression_static_named_index(primaryExpression, tkDot, tkCurrent);
-
+            fieldName = tkCurrent;
             parser_advance(p); // laye identifier
         }
         else
         {
-            result.sourceSpan = source_span_combine(primaryExpression.sourceSpan, tkDot.sourceSpan);
-            result.kind = ::expression_static_named_index_unfinished(primaryExpression, tkDot);
-
-            diagnostics_add_error(p.diagnostics, ::syntax(result), "identifier expected for field index");
+            fieldName = syntax_token_create_empty(tkCurrent, ::laye_identifier(""));
+            diagnostics_add_error(p.diagnostics, ::syntax(result), "identifier expected");
         }
+
+        result.sourceSpan = source_span_combine(primaryExpression.sourceSpan, fieldName.sourceSpan);
+        result.kind = ::expression_static_named_index(primaryExpression, tkDot, fieldName);
 
         return parser_read_laye_primary_expression_suffix(p, result);
     }
@@ -1824,21 +1983,19 @@ syntax_node *parser_read_laye_primary_expression_suffix(parser_data *p, syntax_n
         syntax_token[] delimiters = delimiterStorage[:];
         if (delimiterStorage.length > 0) dynamic_free(delimiterStorage);
 
-        if (parser_current_token(p).kind is not ::close_paren)
+        syntax_token tkCloseParen;
+
+        tkCurrent = parser_current_token(p);
+        if (tkCurrent.kind is ::close_paren)
         {
-            if (arguments.length > 0)
-                result.sourceSpan = source_span_combine(primaryExpression.sourceSpan, arguments[arguments.length - 1].sourceSpan);
-            else result.sourceSpan = source_span_combine(primaryExpression.sourceSpan, tkOpenParen.sourceSpan);
-
-            result.kind = ::expression_invoke_unfinished(primaryExpression, tkOpenParen, arguments, delimiters);
-
-            diagnostics_add_error(p.diagnostics, ::syntax(result), "')' expected to close invocation arguments");
-
-            return result;
+            tkCloseParen = tkCurrent;
+            parser_advance(p); // `)`
         }
-
-        syntax_token tkCloseParen = parser_current_token(p);
-        parser_advance(p); // `)`
+        else
+        {
+            tkCloseParen = syntax_token_create_empty(tkCurrent, ::close_paren);
+            diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "')' expected");
+        }
 
         result.sourceSpan = source_span_combine(primaryExpression.sourceSpan, tkCloseParen.sourceSpan);
         result.kind = ::expression_invoke(primaryExpression, tkOpenParen, arguments, delimiters, tkCloseParen);
@@ -1911,7 +2068,7 @@ bool parser_check_laye_delimiter(parser_data *p, laye_delimiter_kind delimiter)
     return false;
 }
 
-binding_data *[] parser_read_laye_bindings_delimited(parser_data *p, laye_delimiter_kind delimiter, syntax_token[] *delimiters, bool allowTrailingDelimiter, laye_delimiter_kind closingDelimiter)
+binding_data *[] parser_read_laye_bindings_delimited(parser_data *p, laye_delimiter_kind delimiter, syntax_token[] *delimiters, trailing_delimiter_status trailingDelimiterStatus, laye_delimiter_kind closingDelimiter)
 {
     binding_data *[dynamic] bindings;
     if (parser_check_laye_delimiter(p, closingDelimiter))
@@ -1951,7 +2108,14 @@ binding_data *[] parser_read_laye_bindings_delimited(parser_data *p, laye_delimi
         else diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "expected identifier for binding name");
 
         if (not parser_check_laye_delimiter(p, delimiter))
+        {
+            // TODO(local): better errors on delimiters
+            // TODO(local): better errors on delimiters
+            if (trailingDelimiterStatus == trailing_delimiter_status::require)
+                diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "trailing delimiters are required in this context");
+
             break;
+        }
 
         dynamic_append(delimiterBuffer, parser_current_token(p));
         parser_advance(p); // delimiter
@@ -1960,7 +2124,7 @@ binding_data *[] parser_read_laye_bindings_delimited(parser_data *p, laye_delimi
         {
             // TODO(local): better errors on delimiters
             // TODO(local): better errors on delimiters
-            if (not allowTrailingDelimiter)
+            if (trailingDelimiterStatus == trailing_delimiter_status::disallow)
                 diagnostics_add_error(p.diagnostics, ::token(parser_current_token(p)), "trailing delimiters are not allowed in this context");
         }
     }

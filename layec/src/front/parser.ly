@@ -76,3 +76,10 @@ void parser_reset_to_mark(parser_data *p, parser_mark mark)
     p.lexer.currentLine = mark.line;
     p.currentToken = mark.token;
 }
+
+enum trailing_delimiter_status
+{
+    allow,
+    require,
+    disallow,
+}
