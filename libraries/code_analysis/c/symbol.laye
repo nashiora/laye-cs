@@ -1,0 +1,13 @@
+namespace laye::code_analysis::c;
+
+struct c_symbol
+{
+    using symbol;
+
+    c_symbol_kind symbolKind;
+}
+
+enum c_symbol_kind
+{
+    error_type,
+}

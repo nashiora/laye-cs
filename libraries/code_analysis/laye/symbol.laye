@@ -1,0 +1,13 @@
+namespace laye::code_analysis::laye;
+
+struct laye_symbol
+{
+    using symbol;
+
+    laye_symbol_kind symbolKind;
+}
+
+enum laye_symbol_kind
+{
+    error_type,
+}

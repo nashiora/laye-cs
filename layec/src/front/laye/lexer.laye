@@ -398,7 +398,7 @@ syntax_token lexer_read_laye_token(lexer_data *l)
     syntax_trivia[] trailingTrivia = lexer_get_syntax_trivia(l, true);
     token.trailingTrivia = trailingTrivia;
 
-    if (true)
+    if (false)
     {
         string tokenLocationString = source_location_to_string(token.sourceSpan.startLocation);
         string tokenString = source_span_to_string(token.sourceSpan);
@@ -539,12 +539,14 @@ syntax_token_kind get_laye_keyword_kind(lexer_data *l, string image)
             return ::kw_default;
         else */ if (string_equals(image, "defer"))
             return ::kw_defer;
+        //*
         else if (string_equals(image, "dynamic"))
             return ::kw_dynamic;
         else if (string_equals(image, "dynamic_append"))
             return ::kw_dynamic_append;
         else if (string_equals(image, "dynamic_free"))
             return ::kw_dynamic_append;
+        // */
     }
     else if (image[0] == 101 /* e */)
     {
@@ -904,7 +906,7 @@ void lexer_read_laye_rune(lexer_data *l, syntax_token *token)
         lexer_advance(l); // `'`
 
         token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
-        token.kind = ::literal_rune_unfinished;
+        token.kind = ::literal_rune(0);
 
         diagnostics_add_error(l.diagnostics, ::token(*token), "empty rune literal");
         return;
@@ -918,7 +920,7 @@ void lexer_read_laye_rune(lexer_data *l, syntax_token *token)
     else
     {
         token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
-        token.kind = ::literal_rune_unfinished;
+        token.kind = ::literal_rune(runeValue);
 
         diagnostics_add_error(l.diagnostics, ::token(*token), "unfinished rune literal");
     }
@@ -948,18 +950,19 @@ void lexer_read_laye_string(lexer_data *l, syntax_token *token)
         }
     }
 
+    string stringValue = string_builder_to_string(sb);
     if (lexer_current_rune(*l) == 34 /* " */)
     {
         lexer_advance(l); // `"`
-        string stringValue = string_builder_to_string(sb);
         token.kind = ::literal_string(stringValue);
         string_builder_free(&sb);
     }
     else
     {
         token.sourceSpan = source_span_create(startLocation, lexer_current_location(*l));
-        token.kind = ::literal_string_unfinished;
+        token.kind = ::literal_string(stringValue);
 
         diagnostics_add_error(l.diagnostics, ::token(*token), "unfinished string literal");
     }
 }
+

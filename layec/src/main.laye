@@ -49,19 +49,6 @@ void laye_main(string[] args)
 {
     printf("Laye stand-alone compiler%cVersion 0.1.0%c%c", 10, 10, 10);
 
-    /*
-    {
-        printf("invoked with the following arguments:%c", 10);
-
-        uint i = 0;
-        while (i < args.length)
-        {
-            printf("  %.*s%c", args[i].length, args[i].data, 10);
-            i = i + 1;
-        }
-    }
-    */
-
     if (args.length < 2)
     {
         printf("error: no file given%c", 10);
@@ -81,41 +68,25 @@ void laye_main(string[] args)
     parser_data layeParser;
     parser_init(&layeParser, sourceFile, &diagnostics);
 
-    syntax_node *[dynamic] nodes;
-    bool success = parser_read_all_laye_nodes(&layeParser, &nodes);
+    syntax_node *[dynamic] nodeStorage;
+    bool success = parser_read_all_laye_nodes(&layeParser, &nodeStorage);
+    //if (not success) { diagnostics_print(diagnostics); return; }
 
-    if (success)
-        printf("read %llu top level nodes from file successfully%c", nodes.length, 10);
-    //else printf("failed to read top level nodes from file%c", 10);
+    syntax_node *[] nodes = nodeStorage[:];
+    if (nodeStorage.length > 0) dynamic_free(nodeStorage);
+
+    semantic_data layeSemantics;
+    semantics_analyze_laye_syntax(&layeSemantics, nodes, &diagnostics);
+
+    //lower_data layeLower;
+    //lower_process_laye_syntax(&layeLower, nodes);
 
     diagnostics_print(diagnostics);
-    
-    /*
-    syntax_token[] sourceTokens = lexer_read_laye_tokens(sourceFile, &diagnostics);
-
-    printf("read %llu tokens from file successfully%c", sourceTokens.length, 10);
-    diagnostics_print(diagnostics);
-
-    if (false)
+    if (diagnostics.errorCount > 0)
     {
-        uint i = 0;
-        while (i < sourceTokens.length)
-        {
-            syntax_token token = sourceTokens[i];
-
-            string tokenLocationString = source_location_to_string(token.sourceSpan.startLocation);
-            string tokenString = source_span_to_string(token.sourceSpan);
-            string tokenKindString = nameof_variant(token.kind);
-
-            printf("> token %.*s (%.*s) %.*s%c", tokenKindString.length, tokenKindString.data,
-                tokenLocationString.length, tokenLocationString.data,
-                tokenString.length, tokenString.data,
-                10);
-
-            i = i + 1;
-        }
+        printf("compilation completed with errors%cno code generated%c", 10, 10);
+        return;
     }
-    // */
 }
 
 void diagnostics_print(diagnostic_bag b)

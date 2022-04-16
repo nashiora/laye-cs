@@ -1,0 +1,50 @@
+
+struct semantic_data
+{
+    syntax_node *[] nodes;
+    
+    diagnostic_bag *diagnostics;
+
+    symbol_table symbolTable;
+    symbol_scope *globalScope;
+
+    symbol *currentNamespaceSymbol;
+    symbol_scope *currentScope;
+}
+
+void semantics_add_exported_symbol(semantic_data *s, symbol *symbol)
+{
+    dynamic_append(s.symbolTable.symbols, symbol);
+}
+
+symbol *semantics_current_namespace_symbol_get(semantic_data *s)
+{
+    return s.currentNamespaceSymbol;
+}
+
+symbol_scope *semantics_current_scope_get(semantic_data *s)
+{
+    return s.currentScope;
+}
+
+void semantics_current_namespace_symbol_set(semantic_data *s, symbol *symbol)
+{
+    if (cast(rawptr) symbol != nullptr)
+        assert(symbol.kind == symbol_kind::_namespace, "cannot set the current semantic scope symbol to a non-namespace symbol");
+    
+    s.currentNamespaceSymbol = symbol;
+}
+
+void semantics_current_namespace_symbol_set_with_scope(semantic_data *s, symbol *symbol)
+{
+    assert(symbol.kind == symbol_kind::_namespace, "cannot set the current semantic scope symbol to a non-namespace symbol");
+    assert(cast(rawptr) symbol.scope != nullptr, "cannot set the current semantic scope symbol if the scope has not been initialized yet");
+
+    s.currentNamespaceSymbol = symbol;
+    s.currentScope = symbol.scope;
+}
+
+void semantics_current_scope_set(semantic_data *s, symbol_scope *scope)
+{
+    s.currentScope = scope;
+}

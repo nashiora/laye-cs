@@ -1,0 +1,19 @@
+namespace laye::code_analysis;
+
+struct symbol
+{
+    /* The symbol name (or an empty string if unnamed) */
+    string name;
+    /* The symbol name as it appears outside of the source language */
+    string mangledName;
+
+    /* The source language of this symbol (e.g. Laye, C)
+     *
+     * Used to disambiguate additional symbol data for the other languages without
+     *   having union fields separate from the struct itself.
+     * Basically we'd still like to access a symbol's name while we're working
+     *   with its language-specific data. */
+    source_language language;
+
+    // for visual clarity, no fields should be placed below `language`
+}

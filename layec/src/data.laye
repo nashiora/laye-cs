@@ -35,6 +35,7 @@ enum diagnostic_kind
 struct diagnostic_bag
 {
     diagnostic[dynamic] diagnostics;
+    uint errorCount;
 }
 
 source_span diagnostic_source_span_get(diagnostic d)
@@ -79,6 +80,8 @@ void diagnostics_add_error(diagnostic_bag *b, diagnostic_source_kind sourceKind,
     d.sourceKind = sourceKind;
     d.kind = ::error;
     dynamic_append(b.diagnostics, d);
+
+    b.errorCount = b.errorCount + 1;
 }
 
 /* ===== Tokens =====
@@ -130,12 +133,9 @@ enum syntax_token_kind
     // NOTE(local): a literal doesn't necessarily need to contain the value itself, we can re-parse it before code generation. see if you want to change this
     literal_integer(u64 value),
     literal_float(float value),
-    literal_character(i32 value),
     literal_string(string value),
     literal_rune(i32 value),
-
-    literal_string_unfinished,
-    literal_rune_unfinished,
+    //literal_character(i32[] value),
 
     /*
      * TODO(local): figure out how to handle interpolated strings. below is an example of how I think I'd do C# style interpolation
@@ -143,11 +143,11 @@ enum syntax_token_kind
      *   maybe instead a single literal_interpolated_string token with more additional sub-tokens inside would be easier? or a lexer state, like
      *   `normal`, `interpolated_string`, `interpolated_string_tokens` or smth to change token reading rules
      */
-    //interpolated_string_begin, /* start `$"` in `$"hello, {world}!"` */
-    //interpolated_string_literal, /* `hello, ` or `!` in `$"hello, {world}!"` */
-    //interpolated_string_expr_begin, /* `{` in `$"hello, {world}!"` */
-    //interpolated_string_expr_end, /* `}` in `$"hello, {world}!"` */
-    //interpolated_string_end, /* end `"` or `!` in `$"hello, {world}!"` */
+    interpolated_string_begin, /* start `$"` in `$"hello, {world}!"` */
+    interpolated_string_literal, /* `hello, ` or `!` in `$"hello, {world}!"` */
+    interpolated_string_expr_begin, /* `{` in `$"hello, {world}!"` */
+    interpolated_string_expr_end, /* `}` in `$"hello, {world}!"` */
+    interpolated_string_end, /* end `"` or `!` in `$"hello, {world}!"` */
 
     /* delimiter tokens */
     open_paren,
@@ -157,6 +157,7 @@ enum syntax_token_kind
     open_brace,
     close_brace,
     hash_open_bracket,
+    colon_less,
 
     comma,
     dot,
@@ -311,7 +312,8 @@ struct syntax_node
     syntax_node *[] annotations;
     syntax_node *[] modifiers;
 
-    symbol_type_ref typeRef; /* typeRef will be invalid for non-expression nodes or nodes with no yet-resolved type. */
+    symbol *symbol;
+    symbol_scope *scope;
 
     syntax_node_kind kind;
 }
@@ -392,7 +394,7 @@ enum syntax_node_kind
     typed_literal_nullptr(syntax_token literal), /* A literal nullptr with known type information. */
     /* A literal nullptr with known but invalid type information. The same functionality as bad_typed_literal_integer for nullptrs. */
     bad_typed_literal_nullptr(syntax_token literal),
-
+    /* The `context` literal keyword */
     literal_context(syntax_token literal),
 
     // ===== Top Level nodes
@@ -591,12 +593,6 @@ enum syntax_node_kind
               , syntax_node *[] modifiers
               , syntax_token tkOpenSlice
               , syntax_token tkCloseSlice),
-    
-    type_list( syntax_node *elementTypeNode
-             , syntax_node *[] modifiers
-             , syntax_token tkOpenList
-             , syntax_token tkDynamic
-             , syntax_token tkCloseList),
 
     type_ambiguous_container( syntax_node *elementTypeNode
                             , syntax_node *[] modifiers
@@ -658,13 +654,75 @@ bool syntax_node_is_type(syntax_node *node)
 
 struct symbol_table
 {
-    symbol[dynamic] symbols;
+    symbol *[dynamic] symbols;
 }
 
 struct symbol_scope
 {
+    string name;
+    symbol *functionSymbol;
+
+    string fileName;
+
     symbol_scope *parent;
-    symbol[dynamic] symbols;
+    symbol *[dynamic] symbols;
+}
+
+symbol_scope *symbol_scope_alloc()
+{
+    symbol_scope *newScope = cast(symbol_scope *) malloc(sizeof(symbol_scope));
+
+    symbol_scope zeroInit;
+    *newScope = zeroInit;
+
+    return newScope;
+}
+
+void symbol_scope_free(symbol_scope *scope)
+{
+    free(cast(rawptr) scope);
+}
+
+symbol *symbol_scope_get_containing_function_symbol(symbol_scope *scope)
+{
+    if (cast(rawptr) scope.functionSymbol != nullptr)
+        return scope.functionSymbol;
+
+    if (cast(rawptr) scope.parent != nullptr)
+        return symbol_scope_get_containing_function_symbol(scope.parent);
+
+    return nullptr;
+}
+
+void symbol_scope_add_symbol(symbol_scope *scope, symbol *symbol)
+{
+    dynamic_append(scope.symbols, symbol);
+}
+
+symbol *symbol_scope_get_namespace_symbol(symbol_scope *scope, string namespaceName)
+{
+    uint i = 0;
+
+    while (i < scope.symbols.length)
+    {
+        symbol *symbol = scope.symbols[i];
+
+        if (symbol.kind == symbol_kind::_namespace and string_equals(symbol.name, namespaceName))
+            return symbol;
+
+        i = i + 1;
+    }
+
+    return nullptr;
+}
+
+symbol_scope *symbol_scope_get_namespace(symbol_scope *scope, string namespaceName)
+{
+    symbol *namespaceSymbol = symbol_scope_get_namespace_symbol(scope, namespaceName);
+    if (cast(rawptr) namespaceSymbol != nullptr)
+        return namespaceSymbol.scope;
+
+    return nullptr;
 }
 
 struct symbol
@@ -684,21 +742,26 @@ struct symbol
      */
     string mangledName;
 
+    symbol *parent;
+    symbol_scope *scope;
+
     symbol_kind kind;
     symbol_visibility_kind visibility;
 
-    symbol_type_ref typeRef;
+    symbol_type *type;
 }
 
 enum symbol_kind
 {
-    global_variable,
-    global_function,
+    _namespace,
 
-    local_variable,
-    local_function,
+    variable,
+    function,
 
+    _struct,
     struct_field,
+
+    _union,
     union_field,
 
     function_parameter,
@@ -710,16 +773,6 @@ enum symbol_visibility_kind
     exported, // laye's `public`
     project, // laye's `internal`
     file, // laye's `private`
-}
-
-struct symbol_type_table
-{
-    symbol_type[dynamic] types;
-}
-
-struct symbol_type_ref
-{
-    uint typeIndex; /* Opaque index into a symbol_type_table. The current implmenentation subtracts 1 from this index to look up the type. */
 }
 
 struct symbol_type
@@ -736,19 +789,33 @@ enum symbol_type_kind
     poison_type,
 }
 
-bool symbol_type_ref_is_valid(symbol_type_table table, symbol_type_ref typeRef)
+symbol *symbol_alloc()
 {
-    return typeRef.typeIndex != 0 and typeRef.typeIndex - 1 < table.types.length;
+    symbol *result = cast(symbol *) malloc(sizeof(symbol));
+
+    symbol zeroInit;
+    *result = zeroInit;
+
+    return result;
 }
 
-symbol_type symbol_type_table_lookup(symbol_type_table table, symbol_type_ref typeRef)
+void symbol_free(symbol *symbol)
 {
-    if (not symbol_type_ref_is_valid(table, typeRef))
-    {
-        symbol_type invalidType;
-        return invalidType;
-    }
-
-    uint index = typeRef.typeIndex - 1;
-    return table.types[index];
+    free(cast(rawptr) symbol);
 }
+
+symbol_type *symbol_type_alloc()
+{
+    symbol_type *result = cast(symbol_type *) malloc(sizeof(symbol_type));
+
+    symbol_type zeroInit;
+    *result = zeroInit;
+
+    return result;
+}
+
+void symbol_type_free(symbol_type *symbolType)
+{
+    free(cast(rawptr) symbolType);
+}
+

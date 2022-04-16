@@ -42,8 +42,8 @@ static int ProgramEntry(CommandLine.ParserResult<ProgramArgs> result, ProgramArg
     string[] sourceFiles = GetSourceFilesInDirectory(inDir, inDirRecurse).ToArray();
 
     if (inDirRecurse)
-        ShowInfo($"Compiling {sourceFiles.Length} .ly files in `{inDir}` recursively");
-    else ShowInfo($"Compiling {sourceFiles.Length} .ly files in `{inDir}` at top-level only");
+        ShowInfo($"Compiling {sourceFiles.Length} .laye files in `{inDir}` recursively");
+    else ShowInfo($"Compiling {sourceFiles.Length} .laye files in `{inDir}` at top-level only");
 
     var diagnostics = new List<Diagnostic>();
     var sourceSyntaxes = new Dictionary<string, LayeAstRoot>();
@@ -170,7 +170,7 @@ static string GetHelpText(CommandLine.ParserResult<ProgramArgs> result)
 }
 
 static IEnumerable<string> GetSourceFilesInDirectory(string directoryPath, bool recurse) =>
-    Directory.EnumerateFiles(directoryPath, "*.ly", recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+    Directory.EnumerateFiles(directoryPath, "*.laye", recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
 
 sealed class ProgramArgs
 {

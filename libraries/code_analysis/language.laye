@@ -1,0 +1,7 @@
+namespace laye::code_analysis;
+
+enum source_language
+{
+    laye,
+    c,
+}

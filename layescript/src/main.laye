@@ -1,0 +1,8 @@
+using laye;
+
+#[program_entry]
+void main(string[] args)
+{
+    console::write_line("Hello, LayeScript!\n");
+}
+

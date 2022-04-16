@@ -138,7 +138,7 @@ void string_builder_append_uint_hexn(string_builder *sb, uint v, uint n)
         if (d < 10)
         {
             u8 c = cast(u8)(48 + d);
-            sb.data[index] = c; 
+            sb.data[index] = c;
         }
         else
         {

@@ -14,3 +14,4 @@ i32 write_console( rawptr hConsoleOutput
 
 foreign "GetStdHandle" callconv(stdcall)
 rawptr get_std_handle(i32 nStdHandle);
+

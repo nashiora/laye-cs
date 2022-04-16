@@ -1,0 +1,6 @@
+function main()
+{
+    message <- "Hello, LayeScript!";
+    io.println(message);
+}
+

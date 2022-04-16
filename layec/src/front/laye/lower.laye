@@ -1,0 +1,10 @@
+
+void lower_process_laye_syntax(lower_data *l, syntax_node *[] nodes)
+{
+    l.nodes = nodes;
+
+    syntax_node *[dynamic] newNodes;
+
+    l.nodes = newNodes[:];
+    if (newNodes.length > 0) dynamic_free(newNodes);
+}

@@ -1,0 +1,11 @@
+namespace laye;
+
+// uint min(uint a, b) => a < b and a or b
+// interface IComparable<T> { int compare(T a, T b); }
+// T min<T>(T a, T b) where T : IComparable<T> => compare(a, b) < 0 and a or b;
+// uint mv = min:<uint>(10, 20); // for example, explicit
+
+//uint min_uint(uint a, uint b) => if (a < b) then a else b;
+uint min_uint(uint a, uint b) { if (a < b) return a; else return b; }
+
+// overload min { min_uint }

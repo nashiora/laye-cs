@@ -53,8 +53,8 @@ bool parser_read_all_laye_nodes(parser_data *p, syntax_node *[dynamic] *nodes)
             return false;
         }
 
-        string topLevelNodeKindString = nameof_variant(topLevelNode.kind);
-        printf("%.*s%c", topLevelNodeKindString.length, topLevelNodeKindString.data, 10);
+        //string topLevelNodeKindString = nameof_variant(topLevelNode.kind);
+        //printf("%.*s%c", topLevelNodeKindString.length, topLevelNodeKindString.data, 10);
 
         dynamic_append(*nodes, topLevelNode);
     }
@@ -459,6 +459,7 @@ bool parser_read_laye_type_node_impl(parser_data *p, syntax_node **result, bool 
     }
     else if (tkCurrent.kind is ::open_paren)
     {
+        // TODO(local): tuple or grouped type
     }
 
     if (typeNode.kind is not nil)
@@ -1114,7 +1115,7 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
         {
             source_location location = tkCurrent.sourceSpan.startLocation;
             tkSemiColon.sourceSpan = source_span_create(location, location);
-            tkSemiColon.kind = ::poison_token;
+            tkSemiColon.kind = ::semi_colon;
 
             diagnostics_add_error(p.diagnostics, ::token(tkCurrent), "';' expected");
         }
@@ -1136,12 +1137,6 @@ syntax_node *parser_read_laye_statement_with_annotations_and_modifiers(
     {
     }
     else if (tkCurrent.kind is ::kw_unreachable)
-    {
-    }
-    else if (tkCurrent.kind is ::kw_dynamic_append)
-    {
-    }
-    else if (tkCurrent.kind is ::kw_dynamic_free)
     {
     }
 

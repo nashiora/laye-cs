@@ -1,0 +1,219 @@
+
+void semantics_analyze_laye_syntax(semantic_data *s, syntax_node *[] nodes, diagnostic_bag *diagnostics)
+{
+    s.diagnostics = diagnostics;
+
+    s.globalScope = cast(symbol_scope *) malloc(sizeof(symbol_scope));
+
+    symbol_scope zeroInit;
+    *s.globalScope = zeroInit;
+
+    s.nodes = nodes;
+
+    s.currentScope = s.globalScope;
+
+    // generate symbols
+    {
+        uint i = 0;
+        while (i < nodes.length)
+        {
+            syntax_node *node = nodes[i];
+
+            {
+                string nodeKindName = nameof_variant(node.kind);
+                printf("calling semantics_generate_symbols_for_laye_top_level_syntax on %.*s%c",
+                    nodeKindName.length, nodeKindName.data, 10);
+            }
+
+            semantics_generate_symbols_for_laye_top_level_syntax(s, node);
+
+            i = i + 1;
+        }
+    }
+
+    printf("end of generate symbols%c", 10);
+
+    s.currentNamespaceSymbol = nullptr;
+    s.currentScope = s.globalScope;
+
+    // populate symbol data
+    {
+
+    }
+
+    s.currentNamespaceSymbol = nullptr;
+    s.currentScope = s.globalScope;
+
+    // check program semantics
+}
+
+void semantics_generate_symbols_for_laye_top_level_syntax(semantic_data *s, syntax_node *node)
+{
+    if (node.kind is ::namespace_scoped nsScoped)
+    {
+        symbol *lastNamespaceSymbol = semantics_current_namespace_symbol_get(s);
+        symbol_scope *lastScope = semantics_current_scope_get(s);
+
+        symbol *nodeSymbol = nullptr;
+
+        if (nsScoped.path.kind is ::namespace_path nsPath)
+        {
+            symbol *parentNamespaceSymbol = semantics_current_namespace_symbol_get(s);
+            symbol_scope *parentScope = semantics_current_scope_get(s);
+
+            if (cast(rawptr) parentNamespaceSymbol != nullptr)
+                assert(parentNamespaceSymbol.scope == parentScope, "parent namespace symbol scope was not the same as the current lexical scope");
+
+            uint i = 0;
+            while (i < nsPath.identifiers.length)
+            {
+                string namespaceName;
+                {
+                    syntax_node *identifier = nsPath.identifiers[i];
+                    if (identifier.kind is ::expression_identifier_unresolved nsIdentifier)
+                        namespaceName = source_span_to_string(nsIdentifier.identifier.sourceSpan);
+                    else panic("unsupported namespace identifier part kind when generating symbols");
+                }
+
+                symbol *existingNamespaceSymbol = symbol_scope_get_namespace_symbol(parentScope, namespaceName);
+                if (cast(rawptr) existingNamespaceSymbol == nullptr)
+                {
+                    printf("<debug> creating namespace scope %.*s%c", namespaceName.length, namespaceName.data, 10);
+
+                    symbol_scope *newScope = symbol_scope_alloc();
+                    newScope.name = namespaceName;
+                    newScope.fileName = source_span_name_get(node.sourceSpan);
+                    newScope.parent = parentScope;
+
+                    symbol *namespaceSymbol = symbol_alloc();
+                    namespaceSymbol.kind = symbol_kind::_namespace;
+                    namespaceSymbol.name = namespaceName;
+                    namespaceSymbol.parent = parentNamespaceSymbol;
+                    namespaceSymbol.scope = newScope;
+
+                    symbol_scope_add_symbol(parentScope, namespaceSymbol);
+
+                    parentNamespaceSymbol = namespaceSymbol;
+                    parentScope = newScope;
+
+                    semantics_current_namespace_symbol_set_with_scope(s, namespaceSymbol);
+
+                    nodeSymbol = namespaceSymbol;
+                }
+                else
+                {
+                    printf("<debug> found existing namespace scope %.*s%c", namespaceName.length, namespaceName.data, 10);
+
+                    assert(parentScope == existingNamespaceSymbol.scope.parent, "looked up a child scope, but the child's parent was not the same");
+
+                    parentNamespaceSymbol = existingNamespaceSymbol;
+                    parentScope = existingNamespaceSymbol.scope;
+                }
+
+                i = i + 1;
+            }
+        }
+        else panic("unsupported namespace path kind when generating symbols");
+
+        node.symbol = nodeSymbol;
+
+        // TODO(local): handle top level nodes inside namespaces
+        {
+            uint i = 0;
+            while (i < nsScoped.nodes.length)
+            {
+                syntax_node *containedNode = nsScoped.nodes[i];
+                semantics_generate_symbols_for_laye_top_level_syntax(s, containedNode);
+                
+                i = i + 1;
+            }
+        }
+
+        semantics_current_namespace_symbol_set(s, lastNamespaceSymbol);
+        semantics_current_scope_set(s, lastScope);
+    }
+    else if (node.kind is ::namespace_unscoped nsUnscoped)
+    {
+        symbol *lastNamespaceSymbol = semantics_current_namespace_symbol_get(s);
+        symbol_scope *lastScope = semantics_current_scope_get(s);
+
+        if (cast(rawptr) lastNamespaceSymbol != nullptr)
+            diagnostics_add_error(s.diagnostics, ::syntax(node), "unscoped namespaces cannot appear inside other namespaces");
+
+        symbol *nodeSymbol = nullptr;
+
+        if (nsUnscoped.path.kind is ::namespace_path nsPath)
+        {
+            symbol *parentNamespaceSymbol = semantics_current_namespace_symbol_get(s);
+            symbol_scope *parentScope = semantics_current_scope_get(s);
+
+            if (cast(rawptr) parentNamespaceSymbol != nullptr)
+                assert(parentNamespaceSymbol.scope == parentScope, "parent namespace symbol scope was not the same as the current lexical scope");
+
+            uint i = 0;
+            while (i < nsPath.identifiers.length)
+            {
+                string namespaceName;
+                {
+                    syntax_node *identifier = nsPath.identifiers[i];
+                    if (identifier.kind is ::expression_identifier_unresolved nsIdentifier)
+                        namespaceName = source_span_to_string(nsIdentifier.identifier.sourceSpan);
+                    else panic("unsupported namespace identifier part kind when generating symbols");
+                }
+
+                symbol *existingNamespaceSymbol = symbol_scope_get_namespace_symbol(parentScope, namespaceName);
+                if (cast(rawptr) existingNamespaceSymbol == nullptr)
+                {
+                    printf("<debug> creating namespace scope %.*s%c", namespaceName.length, namespaceName.data, 10);
+
+                    symbol_scope *newScope = symbol_scope_alloc();
+                    newScope.name = namespaceName;
+                    newScope.fileName = source_span_name_get(node.sourceSpan);
+                    newScope.parent = parentScope;
+
+                    symbol *namespaceSymbol = symbol_alloc();
+                    namespaceSymbol.kind = symbol_kind::_namespace;
+                    namespaceSymbol.name = namespaceName;
+                    namespaceSymbol.parent = parentNamespaceSymbol;
+                    namespaceSymbol.scope = newScope;
+
+                    symbol_scope_add_symbol(parentScope, namespaceSymbol);
+
+                    parentNamespaceSymbol = namespaceSymbol;
+                    parentScope = newScope;
+
+                    semantics_current_namespace_symbol_set_with_scope(s, namespaceSymbol);
+
+                    nodeSymbol = namespaceSymbol;
+                }
+                else
+                {
+                    printf("<debug> found existing namespace scope %.*s%c", namespaceName.length, namespaceName.data, 10);
+
+                    assert(parentScope == existingNamespaceSymbol.scope.parent, "looked up a child scope, but the child's parent was not the same");
+
+                    parentNamespaceSymbol = existingNamespaceSymbol;
+                    parentScope = existingNamespaceSymbol.scope;
+                }
+
+                i = i + 1;
+            }
+        }
+        else panic("unsupported namespace path kind when generating symbols");
+
+        node.symbol = nodeSymbol;
+
+        //semantics_current_namespace_symbol_set(s, lastNamespaceSymbol);
+        //semantics_current_scope_set(s, lastScope);
+    }
+}
+
+void semantics_analyze_laye_top_level_syntax(semantic_data *s, syntax_node *node)
+{
+    if (node.kind is ::namespace_scoped nsScoped)
+    {
+    }
+    else if (node.kind is ::namespace_unscoped nsUnscoped)
+    {
+    }
+}

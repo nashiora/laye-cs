@@ -1,0 +1,48 @@
+namespace laye::code_analysis::text;
+
+struct source_span(uint start, uint length);
+
+source_span source_span_create(uint start, uint length) => source_span { .start = start, .length = length };
+source_span source_span_create_from_bounds(uint start, uint end)
+    => source_span { .start = start, .length = end - start };
+
+uint source_span_start_get(source_span ss) => ss.start;
+uint source_span_end_get(source_span ss) => ss.start + ss.length;
+uint source_span_length_get(source_span ss) => ss.length;
+
+bool source_span_contains_position(source_span ss, uint position)
+    => position >= source_span_start_get(ss) and position <= source_span_end_get(ss);
+
+bool source_span_contains_span(source_span ss, source_span other)
+    =>  source_span_start_get(other) >= source_span_start_get(ss)
+    and source_span_end_get(other) <= source_span_end_get(ss);
+
+bool source_span_overlaps_span(source_span ss, source_span other)
+    => max(source_span_start_get(ss), source_span_start_get(other)) < min(source_span_end_get(ss), source_span_end_get(other));
+
+source_span source_span_overlap(source_span s1, source_span s2)
+    => source_span {
+        .start = max(source_span_start_get(ss), source_span_start_get(other)),
+        .end = min(source_span_end_get(ss), source_span_end_get(other)),
+    };
+
+bool source_span_intersects_position(source_span ss, uint position)
+    =>  position <= source_span_end_get(ss)
+    and position >= source_span_start_get(ss);
+
+bool source_span_intersects_span(source_span ss, source_span other)
+    =>  source_span_start_get(other) <= source_span_end_get(ss)
+    and source_span_end_get(other) >= source_span_start_get(ss);
+
+source_span? source_span_intersection(source_span s1, source_span s2)
+{
+    uint intersectStart = max(source_span_start_get(s1), source_span_start_get(s2));
+    uint intersectEnd = min(source_span_end_get(s1), source_span_end_get(s2));
+
+    if (intersectStart < intersectEnd)
+        return source_span_create_from_bounds(intersectStart, intersectEnd);
+    else return nil;
+}
+
+bool source_span_equals(source_span s1, source_span s2)
+    => s1.start == s2.start and s1.length == s2.length;

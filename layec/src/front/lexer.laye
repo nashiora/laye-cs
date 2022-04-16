@@ -49,7 +49,9 @@ void lexer_advance(lexer_data *l)
     if (lexer_is_eof(*l)) return;
 
     i32 c = lexer_current_rune(*l);
-    l.currentIndex = l.currentIndex + 1;
+    uint currentByteCount = unicode_utf8_calc_encoded_byte_count(l.source.text[l.currentIndex]);
+
+    l.currentIndex = l.currentIndex + currentByteCount;
 
     if (c == 10)
     {
